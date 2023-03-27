@@ -11,3 +11,10 @@ CREATE TABLE IF NOT EXISTS `warns` (
   `reason` varchar(255) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS `plays` (
+  `id` int(11) NOT NULL,
+  `user_id` varchar(20) NOT NULL,
+  `song_id` varchar(20) NOT NULL,
+  `times_played` int(11) NOT NULL
+);
