@@ -166,6 +166,30 @@ async def on_ready() -> None:
         await bot.tree.sync()
 
 
+def channel_member_count(channel: discord.VoiceChannel, count_bots=False) -> int:
+    return len([member for member in channel.members if not member.bot or count_bots])
+
+@bot.event
+async def on_voice_state_update(member, before, after) -> None:
+    if member.bot:
+        return
+    # If bot is already in a voice channel on that guild
+    if member.guild.voice_client:
+        # If the bot is alone in the voice channel, disconnect
+        if channel_member_count(member.guild.voice_client.channel)== 0:
+            logger.info(f"Disconnected from {member.guild.voice_client.channel} because I was alone in it.")
+            await member.guild.voice_client.disconnect()
+            
+            return
+    else:
+        # If someone joins a voice channel, join it
+        if after.channel:
+            await after.channel.connect()
+            logger.info(f"Connected to {after.channel} because someone joined it.")
+            return
+
+
+
 @tasks.loop(minutes=1.0)
 async def status_task() -> None:
     """
@@ -197,6 +221,7 @@ async def on_command_completion(context: Context) -> None:
     full_command_name = context.command.qualified_name
     split = full_command_name.split(" ")
     executed_command = str(split[0])
+    parameters = str(split[1:])
     if context.guild is not None:
         bot.logger.info(
             f"Executed {executed_command} command in {context.guild.name} (ID: {context.guild.id}) by {context.author} (ID: {context.author.id})"
@@ -281,6 +306,8 @@ async def on_command_error(context: Context, error) -> None:
             color=0xE02B2B,
         )
         await context.send(embed=embed)
+    elif isinstance(error, commands.CommandNotFound):
+        await context.send(f"Command {context.invoked_with} not found. Type `/help` for a list of commands.")
     else:
         raise error
 

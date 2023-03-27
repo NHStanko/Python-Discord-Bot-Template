@@ -36,7 +36,8 @@ class Template(commands.Cog, name="template"):
         # Do your stuff here
 
         # Don't forget to remove "pass", I added this just because there's no content in the method.
-        pass
+        await context.channel.send("This is a test command.")
+        await context.send("This is a test command.", ephemeral=True)
 
 
 # And then we finally add the cog to the bot so that it can load, unload, reload and use it's content.

@@ -93,7 +93,7 @@ class Owner(commands.Cog, name="owner"):
         )
         await context.send(embed=embed)
 
-    @commands.hybrid_command(
+    @commands.command(
         name="load",
         description="Load a cog",
     )
@@ -108,9 +108,9 @@ class Owner(commands.Cog, name="owner"):
         """
         try:
             await self.bot.load_extension(f"cogs.{cog}")
-        except Exception:
+        except Exception as e:
             embed = discord.Embed(
-                description=f"Could not load the `{cog}` cog.", color=0xE02B2B
+                description=f"Could not load the `{cog}` cog. Error {e}", color=0xE02B2B
             )
             await context.send(embed=embed)
             return
@@ -119,7 +119,7 @@ class Owner(commands.Cog, name="owner"):
         )
         await context.send(embed=embed)
 
-    @commands.hybrid_command(
+    @commands.command(
         name="unload",
         description="Unloads a cog.",
     )
@@ -145,7 +145,7 @@ class Owner(commands.Cog, name="owner"):
         )
         await context.send(embed=embed)
 
-    @commands.hybrid_command(
+    @commands.command(
         name="reload",
         description="Reloads a cog.",
     )
@@ -171,7 +171,7 @@ class Owner(commands.Cog, name="owner"):
         )
         await context.send(embed=embed)
 
-    @commands.hybrid_command(
+    @commands.command(
         name="shutdown",
         description="Make the bot shutdown.",
     )
@@ -186,7 +186,7 @@ class Owner(commands.Cog, name="owner"):
         await context.send(embed=embed)
         await self.bot.close()
 
-    @commands.hybrid_command(
+    @commands.command(
         name="say",
         description="The bot will say anything you want.",
     )
@@ -201,7 +201,7 @@ class Owner(commands.Cog, name="owner"):
         """
         await context.send(message)
 
-    @commands.hybrid_command(
+    @commands.command(
         name="embed",
         description="The bot will say anything you want, but within embeds.",
     )
