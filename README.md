@@ -1,4 +1,4 @@
-# Python Discord Bot Template
+# Python Discord Bot
 
 This project is based off of https://github.com/kkrypt0nn/Python-Discord-Bot-Template.
 
