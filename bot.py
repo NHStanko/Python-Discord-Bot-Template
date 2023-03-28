@@ -21,13 +21,14 @@ from discord.ext.commands import Bot, Context
 
 import exceptions
 
-if not os.path.isfile(f"{os.path.realpath(os.path.dirname(__file__))}/config.json"):
+if not os.path.isfile(
+        f"{os.path.realpath(os.path.dirname(__file__))}/config.json"):
     sys.exit("'config.json' not found! Please add it and try again.")
 else:
     with open(f"{os.path.realpath(os.path.dirname(__file__))}/config.json") as file:
         config = json.load(file)
 
-"""	
+"""
 Setup bot intents (events restrictions)
 For more information about intents, please go to the following websites:
 https://discordpy.readthedocs.io/en/latest/intents.html
@@ -117,7 +118,8 @@ logger.setLevel(logging.INFO)
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(LoggingFormatter())
 # File handler
-file_handler = logging.FileHandler(filename="discord.log", encoding="utf-8", mode="w")
+file_handler = logging.FileHandler(
+    filename="discord.log", encoding="utf-8", mode="w")
 file_handler_formatter = logging.Formatter(
     "[{asctime}] [{levelname:<8}] {name}: {message}", "%Y-%m-%d %H:%M:%S", style="{"
 )
@@ -158,7 +160,8 @@ async def on_ready() -> None:
     bot.logger.info(f"Logged in as {bot.user.name}")
     bot.logger.info(f"discord.py API version: {discord.__version__}")
     bot.logger.info(f"Python version: {platform.python_version()}")
-    bot.logger.info(f"Running on: {platform.system()} {platform.release()} ({os.name})")
+    bot.logger.info(
+        f"Running on: {platform.system()} {platform.release()} ({os.name})")
     bot.logger.info("-------------------")
     status_task.start()
     if config["sync_commands_globally"]:
@@ -166,8 +169,11 @@ async def on_ready() -> None:
         await bot.tree.sync()
 
 
-def channel_member_count(channel: discord.VoiceChannel, count_bots=False) -> int:
-    return len([member for member in channel.members if not member.bot or count_bots])
+def channel_member_count(channel: discord.VoiceChannel,
+                         count_bots=False) -> int:
+    return len(
+        [member for member in channel.members if not member.bot or count_bots])
+
 
 @bot.event
 async def on_voice_state_update(member, before, after) -> None:
@@ -176,18 +182,20 @@ async def on_voice_state_update(member, before, after) -> None:
     # If bot is already in a voice channel on that guild
     if member.guild.voice_client:
         # If the bot is alone in the voice channel, disconnect
-        if channel_member_count(member.guild.voice_client.channel)== 0:
-            logger.info(f"Disconnected from {member.guild.voice_client.channel} because I was alone in it.")
+        if channel_member_count(member.guild.voice_client.channel) == 0:
+            logger.info(
+                f"Disconnected from {member.guild.voice_client.channel} because I was alone in it."
+            )
             await member.guild.voice_client.disconnect()
-            
+
             return
     else:
         # If someone joins a voice channel, join it
         if after.channel:
             await after.channel.connect()
-            logger.info(f"Connected to {after.channel} because someone joined it.")
+            logger.info(
+                f"Connected to {after.channel} because someone joined it.")
             return
-
 
 
 @tasks.loop(minutes=1.0)
@@ -301,13 +309,16 @@ async def on_command_error(context: Context, error) -> None:
     elif isinstance(error, commands.MissingRequiredArgument):
         embed = discord.Embed(
             title="Error!",
-            # We need to capitalize because the command arguments have no capital letter in the code.
+            # We need to capitalize because the command arguments have no
+            # capital letter in the code.
             description=str(error).capitalize(),
             color=0xE02B2B,
         )
         await context.send(embed=embed)
     elif isinstance(error, commands.CommandNotFound):
-        await context.send(f"Command {context.invoked_with} not found. Type `/help` for a list of commands.")
+        await context.send(
+            f"Command {context.invoked_with} not found. Type `/help` for a list of commands."
+        )
     else:
         raise error
 
@@ -316,7 +327,8 @@ async def load_cogs() -> None:
     """
     The code in this function is executed whenever the bot will start.
     """
-    for file in os.listdir(f"{os.path.realpath(os.path.dirname(__file__))}/cogs"):
+    for file in os.listdir(
+            f"{os.path.realpath(os.path.dirname(__file__))}/cogs"):
         if file.endswith(".py"):
             extension = file[:-3]
             try:
@@ -324,7 +336,8 @@ async def load_cogs() -> None:
                 bot.logger.info(f"Loaded extension '{extension}'")
             except Exception as e:
                 exception = f"{type(e).__name__}: {e}"
-                bot.logger.error(f"Failed to load extension {extension}\n{exception}")
+                bot.logger.error(
+                    f"Failed to load extension {extension}\n{exception}")
 
 
 asyncio.run(init_db())

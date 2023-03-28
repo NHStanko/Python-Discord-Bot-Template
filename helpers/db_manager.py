@@ -160,7 +160,7 @@ async def get_warnings(user_id: int, server_id: int) -> list:
 
 
 async def add_play(user_id: int, server_id: int, song: str) -> int:
-    '''
+    """
     This function will keep track of the number of times a song has been played by a user
     CREATE TABLE IF NOT EXISTS `plays` (
         `id` int(11) NOT NULL,
@@ -168,6 +168,6 @@ async def add_play(user_id: int, server_id: int, song: str) -> int:
         `song_id` varchar(20) NOT NULL,
         `times_played` int(11) NOT NULL,
         );
-        
-    '''
+
+    """
     pass

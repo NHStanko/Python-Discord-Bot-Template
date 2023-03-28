@@ -103,7 +103,8 @@ class Fun(commands.Cog, name="fun"):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="randomfact", description="Get a random fact.")
+    @commands.hybrid_command(name="randomfact",
+                             description="Get a random fact.")
     @checks.not_blacklisted()
     async def randomfact(self, context: Context) -> None:
         """
@@ -111,14 +112,17 @@ class Fun(commands.Cog, name="fun"):
 
         :param context: The hybrid command context.
         """
-        # This will prevent your bot from stopping everything when doing a web request - see: https://discordpy.readthedocs.io/en/stable/faq.html#how-do-i-make-a-web-request
+        # This will prevent your bot from stopping everything when doing a web
+        # request - see:
+        # https://discordpy.readthedocs.io/en/stable/faq.html#how-do-i-make-a-web-request
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 "https://uselessfacts.jsph.pl/random.json?language=en"
             ) as request:
                 if request.status == 200:
                     data = await request.json()
-                    embed = discord.Embed(description=data["text"], color=0xD75BF4)
+                    embed = discord.Embed(
+                        description=data["text"], color=0xD75BF4)
                 else:
                     embed = discord.Embed(
                         title="Error!",

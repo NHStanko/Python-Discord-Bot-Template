@@ -29,13 +29,15 @@ class General(commands.Cog, name="general"):
     async def help(self, context: Context) -> None:
         prefix = self.bot.config["prefix"]
         embed = discord.Embed(
-            title="Help", description=f"You can use / or {prefix} for any of these commands\nList of available commands:", color=0x9C84EF
+            title="Help",
+            description=f"You can use / or {prefix} for any of these commands\nList of available commands:",
+            color=0x9C84EF,
         )
         for i in self.bot.cogs:
             # if cog is owner only and the user is not the owner, skip it
             if i.lower() == "owner" and not await self.bot.is_owner(context.author):
                 continue
-            
+
             cog = self.bot.get_cog(i.lower())
             commands = cog.get_commands()
             data = []
@@ -47,7 +49,9 @@ class General(commands.Cog, name="general"):
                 name=i.capitalize(), value=f"```{help_text}```", inline=False
             )
         await context.author.send(embed=embed)
-        await context.send("I've sent you a DM with all commands!", delete_after=5, ephemeral=True)
+        await context.send(
+            "I've sent you a DM with all commands!", delete_after=5, ephemeral=True
+        )
 
     @commands.hybrid_command(
         name="botinfo",
@@ -104,7 +108,8 @@ class General(commands.Cog, name="general"):
         embed.add_field(
             name="Text/Voice Channels", value=f"{len(context.guild.channels)}"
         )
-        embed.add_field(name=f"Roles ({len(context.guild.roles)})", value=roles)
+        embed.add_field(
+            name=f"Roles ({len(context.guild.roles)})", value=roles)
         embed.set_footer(text=f"Created at: {context.guild.created_at}")
         await context.send(embed=embed)
 
@@ -155,7 +160,7 @@ class General(commands.Cog, name="general"):
     # @checks.not_blacklisted()
     # async def server(self, context: Context) -> None:
     #     """
-    #     Get the invite link of the discord server of the bot for some support.
+    # Get the invite link of the discord server of the bot for some support.
 
     #     :param context: The hybrid command context.
     #     """
