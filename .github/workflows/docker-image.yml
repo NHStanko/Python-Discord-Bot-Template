@@ -15,9 +15,9 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
+      run: docker build . --file Dockerfile --tag discord-bot:$(date +%s)
     - name: Push the Docker image to the registry github container registry
-      run: docker push ghcr.io/nhstanko/my-image-name:$(date +%s)
+      run: docker push ghcr.io/nhstanko/discord-bot:$(date +%s)
       env:
         DOCKER_USERNAME: ${{ github.actor }}
         DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
