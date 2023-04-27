@@ -182,8 +182,7 @@ class Owner(commands.Cog, name="owner"):
 
         :param context: The hybrid command context.
         """
-        embed = discord.Embed(
-            description="Shutting down. Bye! :wave:", color=0x9C84EF)
+        embed = discord.Embed(description="Shutting down. Bye! :wave:", color=0x9C84EF)
         await context.send(embed=embed)
         await self.bot.close()
 
@@ -327,6 +326,23 @@ class Owner(commands.Cog, name="owner"):
         )
         embed.set_footer(
             text=f"There {'is' if total == 1 else 'are'} now {total} {'user' if total == 1 else 'users'} in the blacklist"
+        )
+        await context.send(embed=embed)
+        
+    @commands.hybrid_command(
+        name="patchnotes",
+        description="Shows the latest patchnotes of the bot.",
+    )
+    @checks.is_owner()
+    async def patchnotes(self, context: Context) -> None:
+        """
+        Shows the latest patchnotes of the bot.
+
+        :param context: The command context.
+        """
+        embed = discord.Embed(title="Sex Update", color=0x9C84EF)
+        embed.description = (
+            "• Added the `sex` command.\n• Added the `addsex` command.\n• Added the `purgebot` command.\n"
         )
         await context.send(embed=embed)
 

@@ -1,9 +1,8 @@
 import os
 import random
-import subprocess
+import re
+import shutil
 from pathlib import Path
-
-# Import List
 from typing import List
 
 import discord
@@ -13,8 +12,6 @@ from discord.ext.commands import Context
 from yt_dlp import YoutubeDL
 
 from helpers import checks, db_manager
-import re
-import shutil
 
 
 async def play_sound(guild: discord.Guild, sound: str):
@@ -23,7 +20,7 @@ async def play_sound(guild: discord.Guild, sound: str):
     if guild.voice_client.is_playing():
         guild.voice_client.stop()
     guild.voice_client.play(
-        FFmpegPCMAudio(executable="ffmpeg", source=f"sounds/{sound}")
+        FFmpegPCMAudio(executable="ffmpeg", source=f"sounds/{sound}", options="-af volume=0.75")
     )
 
 
@@ -32,7 +29,7 @@ def get_sound():
     return sounds
 
 
-def get_sound_with_extension(dir: str = './sounds') -> dict:
+def get_sound_with_extension(dir: str = "./sounds") -> dict:
     # Filename : basename
     sounds = {Path(sound).stem: sound for sound in os.listdir(dir)}
     return sounds
@@ -62,7 +59,7 @@ class Voice(commands.Cog, name="voice"):
 
         Returns:
             List[app_commands.Choice[str]]: list of choices that have the current input in them
-        """        
+        """
         sounds = get_sound()
         return [
             app_commands.Choice(name=sound, value=sound)
@@ -192,9 +189,7 @@ class Voice(commands.Cog, name="voice"):
             )
             return
         if not context.voice_client:
-            await context.send(
-                "I am not connected to a voice channel.", ephemeral=True
-            )
+            await context.send("I am not connected to a voice channel.", ephemeral=True)
             return
         if context.author.voice.channel != context.voice_client.channel:
             await context.send(
@@ -231,8 +226,8 @@ class Voice(commands.Cog, name="voice"):
         Args:
             context (Context): discord.py context object
             sound (str): sound to delete
-        """        
-        
+        """
+
         # Check if the user has the permissions to delete messages
         if not context.author.guild_permissions.manage_messages:
             await context.send(
@@ -252,7 +247,7 @@ class Voice(commands.Cog, name="voice"):
 
         os.remove(f"./sounds/{sounds[sound]}")
         await context.send(f"Deleted {sound}.", ephemeral=True, delete_after=3)
-        
+
     @commands.hybrid_command(
         name="restore",
         description="This command restores a sound.",
@@ -263,8 +258,8 @@ class Voice(commands.Cog, name="voice"):
         Args:
             context (Context): discord.py context object
             sound (str): sound to restore
-        """        
-        
+        """
+
         # Check if the user has the permissions to delete messages
         if not context.author.guild_permissions.manage_messages:
             await context.send(
@@ -283,7 +278,9 @@ class Voice(commands.Cog, name="voice"):
             return
 
         # Copy from sounds/original to sounds
-        shutil.copyfile(f"./sounds/original/{sounds[sound]}", f"./sounds/{sounds[sound]}")
+        shutil.copyfile(
+            f"./sounds/original/{sounds[sound]}", f"./sounds/{sounds[sound]}"
+        )
         await context.send(f"Restored {sound}.", ephemeral=True, delete_after=3)
 
     # Commands that are associated with adding sounds
@@ -353,8 +350,7 @@ class Voice(commands.Cog, name="voice"):
 
         await context.send(f"Converting the video", ephemeral=True, delete_after=3)
 
-        extension = re.search(
-            r"\.(\w+)$", os.listdir("./sounds/temp")[0]).group(1)
+        extension = re.search(r"\.(\w+)$", os.listdir("./sounds/temp")[0]).group(1)
 
         output = os.system(
             f"ffmpeg -ss {start} -i ./sounds/temp/temp.{extension} {f'-t {duration}' if duration!=-1 else ''} -vn ./sounds/temp/{name}.mp3"
@@ -362,13 +358,11 @@ class Voice(commands.Cog, name="voice"):
 
         # Copy to original and sounds
         shutil.copy(f"./sounds/temp/{name}.mp3", f"./sounds/{name}.mp3")
-        shutil.copy(f"./sounds/temp/{name}.mp3",
-                    f"./sounds/original/{name}.mp3")
+        shutil.copy(f"./sounds/temp/{name}.mp3", f"./sounds/original/{name}.mp3")
 
-        await context.send(f"Added {name}, use /play {name}", ephemeral=True, delete_after=30)
-        
-        
-    
+        await context.send(
+            f"Added {name}, use /play {name}", ephemeral=True, delete_after=30
+        )
 
 
 # And then we finally add the cog to the bot so that it can load, unload,

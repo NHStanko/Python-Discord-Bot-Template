@@ -108,8 +108,7 @@ class General(commands.Cog, name="general"):
         embed.add_field(
             name="Text/Voice Channels", value=f"{len(context.guild.channels)}"
         )
-        embed.add_field(
-            name=f"Roles ({len(context.guild.roles)})", value=roles)
+        embed.add_field(name=f"Roles ({len(context.guild.roles)})", value=roles)
         embed.set_footer(text=f"Created at: {context.guild.created_at}")
         await context.send(embed=embed)
 

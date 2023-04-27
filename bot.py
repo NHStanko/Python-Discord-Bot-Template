@@ -21,8 +21,7 @@ from discord.ext.commands import Bot, Context
 
 import exceptions
 
-if not os.path.isfile(
-        f"{os.path.realpath(os.path.dirname(__file__))}/config.json"):
+if not os.path.isfile(f"{os.path.realpath(os.path.dirname(__file__))}/config.json"):
     sys.exit("'config.json' not found! Please add it and try again.")
 else:
     with open(f"{os.path.realpath(os.path.dirname(__file__))}/config.json") as file:
@@ -118,8 +117,7 @@ logger.setLevel(logging.INFO)
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(LoggingFormatter())
 # File handler
-file_handler = logging.FileHandler(
-    filename="discord.log", encoding="utf-8", mode="w")
+file_handler = logging.FileHandler(filename="discord.log", encoding="utf-8", mode="w")
 file_handler_formatter = logging.Formatter(
     "[{asctime}] [{levelname:<8}] {name}: {message}", "%Y-%m-%d %H:%M:%S", style="{"
 )
@@ -160,8 +158,7 @@ async def on_ready() -> None:
     bot.logger.info(f"Logged in as {bot.user.name}")
     bot.logger.info(f"discord.py API version: {discord.__version__}")
     bot.logger.info(f"Python version: {platform.python_version()}")
-    bot.logger.info(
-        f"Running on: {platform.system()} {platform.release()} ({os.name})")
+    bot.logger.info(f"Running on: {platform.system()} {platform.release()} ({os.name})")
     bot.logger.info("-------------------")
     status_task.start()
     if config["sync_commands_globally"]:
@@ -169,10 +166,8 @@ async def on_ready() -> None:
         await bot.tree.sync()
 
 
-def channel_member_count(channel: discord.VoiceChannel,
-                         count_bots=False) -> int:
-    return len(
-        [member for member in channel.members if not member.bot or count_bots])
+def channel_member_count(channel: discord.VoiceChannel, count_bots=False) -> int:
+    return len([member for member in channel.members if not member.bot or count_bots])
 
 
 @bot.event
@@ -193,8 +188,7 @@ async def on_voice_state_update(member, before, after) -> None:
         # If someone joins a voice channel, join it
         if after.channel:
             await after.channel.connect()
-            logger.info(
-                f"Connected to {after.channel} because someone joined it.")
+            logger.info(f"Connected to {after.channel} because someone joined it.")
             return
 
 
@@ -203,7 +197,7 @@ async def status_task() -> None:
     """
     Setup the game status task of the bot.
     """
-    statuses = ["with you!", "with my feelings!", "with humans!"]
+    statuses = ["sex update"]
     await bot.change_presence(activity=discord.Game(random.choice(statuses)))
 
 
@@ -327,8 +321,7 @@ async def load_cogs() -> None:
     """
     The code in this function is executed whenever the bot will start.
     """
-    for file in os.listdir(
-            f"{os.path.realpath(os.path.dirname(__file__))}/cogs"):
+    for file in os.listdir(f"{os.path.realpath(os.path.dirname(__file__))}/cogs"):
         if file.endswith(".py"):
             extension = file[:-3]
             try:
@@ -336,8 +329,7 @@ async def load_cogs() -> None:
                 bot.logger.info(f"Loaded extension '{extension}'")
             except Exception as e:
                 exception = f"{type(e).__name__}: {e}"
-                bot.logger.error(
-                    f"Failed to load extension {extension}\n{exception}")
+                bot.logger.error(f"Failed to load extension {extension}\n{exception}")
 
 
 asyncio.run(init_db())
