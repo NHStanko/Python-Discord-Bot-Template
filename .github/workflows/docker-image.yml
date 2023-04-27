@@ -17,7 +17,7 @@ jobs:
     - name: Build the Docker image
       run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
     - name: Push the Docker image to the registry github container registry
-      run: docker push ghcr.io/nhstanko/discord-python:$(date +%s)
+      run: docker push ghcr.io/nhstanko/my-image-name:$(date +%s)
       env:
         DOCKER_USERNAME: ${{ github.actor }}
         DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
