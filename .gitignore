@@ -147,6 +147,7 @@ cython_debug/
 discord.log
 
 /config.json
+/config/config.json
 # Remove sounds but include airhorn.mp3
 /sounds/*
 !/sounds/airhorn.mp3
