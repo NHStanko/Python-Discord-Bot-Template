@@ -15,7 +15,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag nhstanko/discord-bot:latest
+      run: docker build . --file Dockerfile --tag ghcr.io/nhstanko/discord-bot:latest
     - name: Push the Docker image to the registry github container registry
       run: docker push ghcr.io/nhstanko/discord-bot:lastest
       env:
