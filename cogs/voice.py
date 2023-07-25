@@ -230,7 +230,7 @@ class Voice(commands.Cog, name="voice"):
             return
 
         embed = discord.Embed(
-            title="Sound leaderboard",
+            title=f"Sound leaderboard{f' for {user.display_name}' if user else ''}",
             color=0xE02B2B,
         )
         # enumerate
