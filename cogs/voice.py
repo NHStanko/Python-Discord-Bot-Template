@@ -203,12 +203,12 @@ class Voice(commands.Cog, name="voice"):
         if user is None:
             plays = await db_manager.get_plays(0,sound)
             await context.send(
-                f"{sound} has been played {plays} times.",
+                f"`{sound}` has been played {plays} times.",
             )
         else:
             plays = await db_manager.get_plays(user.id,sound)
             await context.send(
-                f"{sound} has been played {plays} times by {user.display_name}.",
+                f"`{sound}` has been played {plays} times by {user.display_name}.",
 
             )
             
