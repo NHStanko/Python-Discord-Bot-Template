@@ -340,7 +340,7 @@ class Owner(commands.Cog, name="owner"):
 
         :param context: The command context.
         """
-        embed = discord.Embed(title="Sex Update", color=0x9C84EF)
+        embed = discord.Embed(title="Sounds Update", color=0x9C84EF)
         embed.description = (
             "• Renamed `/sounds` to `/sounds list` and made the return ephemeral\n• Added `/sounds count` to list how many times a sound was played\n• Added `/sounds leaderboard` to show the top sounds in the server or per user\n"
         )
