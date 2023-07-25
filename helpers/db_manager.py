@@ -9,6 +9,7 @@ Version: 5.5.0
 import os
 
 import aiosqlite
+import logging
 
 DATABASE_PATH = f"{os.path.realpath(os.path.dirname(__file__))}/../database/database.db"
 
@@ -159,7 +160,7 @@ async def get_warnings(user_id: int, server_id: int) -> list:
             return result_list
 
 
-async def add_play(user_id: int, server_id: int, song: str) -> int:
+async def add_play(user_id: int, song: str) -> int:
     """
     This function will keep track of the number of times a song has been played by a user
     CREATE TABLE IF NOT EXISTS `plays` (
@@ -170,4 +171,83 @@ async def add_play(user_id: int, server_id: int, song: str) -> int:
         );
 
     """
-    pass
+    
+    logger = logging.getLogger("discord_bot")
+    
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        # Check if the song has already been played by the user
+        rows = await db.execute(
+            "SELECT times_played FROM plays WHERE user_id=? AND song_id=?",
+            (user_id, song),
+        )
+        
+        # Fetch the result
+        result = await rows.fetchone()
+        if result is not None:
+            times_played = result[0] + 1
+            await db.execute(
+                "UPDATE plays SET times_played=? WHERE user_id=? AND song_id=?",
+                (times_played, user_id, song),
+            )
+            await db.commit()
+            return times_played
+        else:
+            # If the song has not been played by the user, add it to the database
+            await db.execute(
+                "INSERT INTO plays(user_id, song_id, times_played) VALUES (?, ?, ?)",
+                (user_id, song, 1),
+            )
+            await db.commit()
+            return 1
+
+async def get_plays(user_id: int, song: str) -> int:
+    # check if user id is 0, if so, return the total number of times the song has been played
+    if user_id == 0:
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            rows = await db.execute(
+                "SELECT SUM(times_played) FROM plays WHERE song_id=?",
+                (   
+                    song,
+                ),
+            )
+            async with rows as cursor:
+                result = await cursor.fetchone()
+                return result[0] if result[0] is not None else 0
+    else:
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            rows = await db.execute(
+                "SELECT times_played FROM plays WHERE user_id=? AND song_id=?",
+                (
+                    user_id,
+                    song,
+                ),
+            )
+            async with rows as cursor:
+                result = await cursor.fetchone()
+                return result[0] if result[0] is not None else 0
+            
+# List the top 10 songs played by all or a specific user
+async def get_leaderboard(user_id: int ) -> list:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        if user_id == 0:
+            # Combine plays for all users
+            rows = await db.execute(
+                "SELECT song_id, SUM(times_played) FROM plays GROUP BY song_id ORDER BY SUM(times_played) DESC LIMIT 12",
+            )
+        else:
+            # Combine plays for a specific user, only return song_id and times_played
+            rows = await db.execute(
+                "SELECT song_id, times_played FROM plays WHERE user_id=? ORDER BY times_played DESC LIMIT 12",
+                (
+                    user_id,
+                ),
+            )
+            print(rows)
+        async with rows as cursor:
+            result = await cursor.fetchall()
+            result_list = []
+            for row in result:
+                result_list.append(row)
+            return result_list
+
+        

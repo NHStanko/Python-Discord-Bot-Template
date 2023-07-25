@@ -13,8 +13,8 @@ CREATE TABLE IF NOT EXISTS `warns` (
 );
 
 CREATE TABLE IF NOT EXISTS `plays` (
-  `id` int(11) NOT NULL,
-  `user_id` varchar(20) NOT NULL,
-  `song_id` varchar(20) NOT NULL,
-  `times_played` int(11) NOT NULL
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id VARCHAR(20) NOT NULL,
+  song_id VARCHAR(20) NOT NULL,
+  times_played INTEGER NOT NULL
 );

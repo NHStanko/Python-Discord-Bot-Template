@@ -119,15 +119,27 @@ class Voice(commands.Cog, name="voice"):
 
         await play_sound(context, sounds[sound])
         await context.send(f"Playing {sound}.", ephemeral=True, delete_after=10)
-        await db_manager.add_play(context.author.id, context.guild.id, sound)
+        # async def add_play(user_id: int, song: str) -> int:
+        await db_manager.add_play(context.author.id, sound)
         if not context.interaction:
             await context.message.delete()
 
-    @commands.hybrid_command(
+    @commands.hybrid_group(
         name="sounds",
-        description="This command lists all the sounds.",
+        description="This command lists sounds.",
     )
-    async def sounds(self, context: Context):
+    async def sounds(self, context: Context, *, sound: str):
+        """TBD"""
+        await context.send(
+            "This command is not implemented yet.", ephemeral=True, delete_after=5
+        )
+        pass
+    @sounds.command(
+        base="sounds",
+        name="list",
+        description="This command lists all the sounds.",
+    )   
+    async def sounds_list(self, context: Context):
         """
         This command lists all the sounds.
 
@@ -150,7 +162,8 @@ class Voice(commands.Cog, name="voice"):
                     description=buffer_message,
                     color=0xE02B2B,
                 )
-                await context.author.send(embed=embed)
+                # Send it as an emphemeral message
+                await context.send(embed=embed, ephemeral=True)
                 buffer_message = ""
             buffer_message += f"{sound}, "
 
@@ -160,7 +173,7 @@ class Voice(commands.Cog, name="voice"):
             color=0xE02B2B,
         )
         # Send it in a DM
-        await context.author.send(embed=embed)
+        await context.send(embed=embed, ephemeral=True)
 
         # If it was not a slash command, delete the message
         if not context.interaction:
@@ -171,6 +184,68 @@ class Voice(commands.Cog, name="voice"):
                 ephemeral=True,
                 delete_after=5,
             )
+            
+    @sounds.command(
+        base="sounds",
+        name="count",
+        description="This command counts the number of times a sound has been played by a user.",
+    )
+    @app_commands.autocomplete(sound=play_autocomplete)
+    async def count(self, context: Context, *, sound: str, user: discord.User = None):
+        """This command counts the number of times a sound has been played.
+
+        Args:
+            context (Context): discord.py context object
+            sound (str): sound to count
+            user (discord.User, optional): user to count. Defaults to None.
+        """
+        # dbmanager.get_plays(sound, user.id)
+        if user is None:
+            plays = await db_manager.get_plays(0,sound)
+            await context.send(
+                f"{sound} has been played {plays} times.",
+            )
+        else:
+            plays = await db_manager.get_plays(user.id,sound)
+            await context.send(
+                f"{sound} has been played {plays} times by {user.display_name}.",
+
+            )
+            
+    @sounds.command(
+        base="sounds",
+        name="leaderboard",
+        description="This command counts the number of times a sound has been played by a user.",
+    )
+    async def sounds_leaderboard(self, context: Context, *, user: discord.User = None):
+        if user is None:
+            top_plays = await db_manager.get_leaderboard(0)
+        else:
+            top_plays = await db_manager.get_leaderboard(user.id)
+
+        if len(top_plays) == 0:
+            await context.send(
+                f"User {user.display_name} has not played any sounds yet.",
+            )
+            return
+
+        embed = discord.Embed(
+            title="Sound leaderboard",
+            color=0xE02B2B,
+        )
+        # enumerate
+        for i, (sound,play) in enumerate(top_plays):
+            embed.add_field(
+                name=f"{i+1}. {sound}",
+                value=f"{play} plays",
+                inline=True,
+            )
+        await context.send(embed=embed)
+        
+        
+
+            
+            
 
     @commands.hybrid_command(
         name="stop",
@@ -364,6 +439,8 @@ class Voice(commands.Cog, name="voice"):
             f"Added {name}, use /play {name}", ephemeral=True, delete_after=30
         )
 
+        
+    # Sound str and User
 
 # And then we finally add the cog to the bot so that it can load, unload,
 # reload and use it's content.
