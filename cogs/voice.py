@@ -501,7 +501,7 @@ class SoundModifyView(discord.ui.View):
         output = os.system(f"ffmpeg -i ./sounds/{self.sound_ext} -af volume=0.8 ./sounds/temp/{self.sound_ext} -y")
         # Copy from temp to sounds
         shutil.copy(f"./sounds/temp/{self.sound_ext}", f"./sounds/{self.sound_ext}")
-        # await interaction.response.send_message(f"`{self.sound}` decreased 20%", ephemeral=True, delete_after=1)
+        await interaction.response.send_message(f"`{self.sound}` decreased 20%", ephemeral=True, delete_after=5)
 
     @discord.ui.button(label="Vol Up", style=discord.ButtonStyle.gray)
     async def vol_up(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -510,7 +510,7 @@ class SoundModifyView(discord.ui.View):
         output = os.system(f"ffmpeg -i ./sounds/{self.sound_ext} -af volume=1.2 ./sounds/temp/{self.sound_ext} -y")
         # Copy from temp to sounds
         shutil.copy(f"./sounds/temp/{self.sound_ext}", f"./sounds/{self.sound_ext}")
-        # await interaction.response.send_message(f"`{self.sound}` increased 20%", ephemeral=True, delete_after=1)
+        await interaction.response.send_message(f"`{self.sound}` increased 20%", ephemeral=True, delete_after=5)
         
     # @discord.ui.button(label="Play", style=discord.ButtonStyle.blurple)
     # async def play(self, interaction: discord.Interaction, button: discord.ui.Button):
