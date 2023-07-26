@@ -463,7 +463,7 @@ class Voice(commands.Cog, name="voice"):
         """TBD"""
         
         # Create the view
-        view = SoundModifyView(sound)
+
         # Send the message
         # Check if the sound exists
         if sound not in get_sound():
@@ -471,6 +471,7 @@ class Voice(commands.Cog, name="voice"):
                 "This sound does not exist.", ephemeral=True, delete_after=10
             )
             return
+        view = SoundModifyView(sound)
         await context.send(f"Modifying `{sound}`", view=view)
         
     
