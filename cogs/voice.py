@@ -4,6 +4,7 @@ import re
 import shutil
 from pathlib import Path
 from typing import List
+import logging
 
 import discord
 from discord import FFmpegPCMAudio, app_commands
@@ -24,8 +25,8 @@ async def play_sound(guild: discord.Guild, sound: str):
     )
 
 
-def get_sound():
-    sounds = [Path(sound).stem for sound in os.listdir("sounds")]
+def get_sound(dir="./sounds"):
+    sounds = [Path(sound).stem for sound in os.listdir(dir)]
     return sounds
 
 
@@ -439,8 +440,116 @@ class Voice(commands.Cog, name="voice"):
             f"Added {name}, use /play {name}", ephemeral=True, delete_after=30
         )
 
+
+
+    @commands.hybrid_group(
+        name="modify",
+        description="This command modifies a sound.",
+    )
+    async def modify(self, context: Context, *, sound: str):
+        """TBD"""
+        await context.send(
+            "This command is not implemented yet.", ephemeral=True, delete_after=5
+        )
+        pass
+    
+    @modify.command(
+        base="modify",
+        name="volume",
+        description="This command modifies the volume of a sound.",
+    )
+    @app_commands.autocomplete(sound=play_autocomplete)
+    async def modify_volume(self, context: Context, *, sound: str):
+        """TBD"""
         
-    # Sound str and User
+        # Create the view
+        view = SoundModifyView(sound)
+        # Send the message
+        # Check if the sound exists
+        if sound not in get_sound():
+            await context.send(
+                "This sound does not exist.", ephemeral=True, delete_after=10
+            )
+            return
+        await context.send(f"Modifying `{sound}`", view=view)
+        
+    
+        
+class SoundModifyView(discord.ui.View):
+    def __init__(self, sound: str):
+        super().__init__()
+        self.sound = sound
+        self.sound_ext = get_sound_with_extension()[sound]
+        # Set the title of the view
+        self.title = f"Modifying {self.sound}"
+        
+        # Check if the sound exists in the original folder
+        originals = get_sound(dir="./sounds/original")
+        if not self.sound in originals:
+            # Copy from sounds to sounds/original
+            # Find the full name of the sound with the extension
+            sounds = get_sound_with_extension(dir="./sounds")
+            shutil.copy(f"./sounds/{sounds[self.sound]}", f"./sounds/original/{sounds[self.sound]}")
+        
+    
+
+    # Callback for the "Vol Down" button
+    @discord.ui.button(label="Vol Down", style=discord.ButtonStyle.gray)
+    async def vol_down(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Modify and save to a temp file
+        output = os.system(f"ffmpeg -i ./sounds/{self.sound_ext} -af volume=0.8 ./sounds/temp/{self.sound_ext} -y")
+        # Copy from temp to sounds
+        shutil.copy(f"./sounds/temp/{self.sound_ext}", f"./sounds/{self.sound_ext}")
+        # await interaction.response.send_message(f"`{self.sound}` decreased 20%", ephemeral=True, delete_after=1)
+
+    @discord.ui.button(label="Vol Up", style=discord.ButtonStyle.gray)
+    async def vol_up(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Send a response with the button label
+        # Modify and save to a temp file
+        output = os.system(f"ffmpeg -i ./sounds/{self.sound_ext} -af volume=1.2 ./sounds/temp/{self.sound_ext} -y")
+        # Copy from temp to sounds
+        shutil.copy(f"./sounds/temp/{self.sound_ext}", f"./sounds/{self.sound_ext}")
+        # await interaction.response.send_message(f"`{self.sound}` increased 20%", ephemeral=True, delete_after=1)
+        
+    # @discord.ui.button(label="Play", style=discord.ButtonStyle.blurple)
+    # async def play(self, interaction: discord.Interaction, button: discord.ui.Button):
+    #     # Send a response with the button label
+    #     # Check if the user is in a voice channel with the bot
+    #     if not interaction.user.voice:
+    #         await interaction.response.send_message(
+    #             "You are not connected to a voice channel.", ephemeral=True
+    #         )
+    #         return
+    #     # Is the bot in a voice channel?
+    #     if interaction.guild.voice_client:
+    #         # Is the user in a different channel?
+    #         if interaction.user.voice.channel != interaction.guild.voice_client.channel:
+    #             # Is the bot playing?
+    #             if interaction.guild.voice_client.is_playing():
+    #                 await interaction.response.send_message(
+    #                     "I am already playing music in another channel.", ephemeral=True
+    #                 )
+    #                 return
+    #             else:
+    #                 await interaction.guild.voice_client.move_to(interaction.user.voice.channel)
+    #     else:
+    #         await interaction.user.voice.channel.connect()
+            
+    #     sounds = get_sound_with_extension()
+    #     # Start the play in the background so that the bot can respond
+
+        
+    @discord.ui.button(label="Reset", style=discord.ButtonStyle.red)
+    async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Send a response with the button label
+        # copy from sounds/original to sounds
+        sounds = get_sound_with_extension(dir="./sounds")
+        shutil.copy(f"./sounds/original/{sounds[self.sound]}", f"./sounds/{sounds[self.sound]}")
+        await interaction.message.edit(view=None, content=f'`{self.sound}` has been reset.')
+        
+    @discord.ui.button(label="Confirm", style=discord.ButtonStyle.green)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.message.edit(view=None, content=f'`{self.sound}` has been modified.')
 
 # And then we finally add the cog to the bot so that it can load, unload,
 # reload and use it's content.
