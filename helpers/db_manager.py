@@ -250,4 +250,78 @@ async def get_leaderboard(user_id: int ) -> list:
                 result_list.append(row)
             return result_list
 
+async def user_exists(user_id: int) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        rows = await db.execute(
+            "SELECT * FROM money WHERE user_id=?",
+            (
+                user_id,
+            ),
+        )
+        async with rows as cursor:
+            result = await cursor.fetchone()
+            return result is not None
+
+async def create_user(user_id: int) -> None:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            "INSERT INTO money (user_id, money) VALUES (?, ?)",
+            (
+                user_id,
+                10000,
+            ),
+        )
+        await db.commit()
         
+async def check_user(user_id: int) -> None:
+    if not await user_exists(user_id):
+        await create_user(user_id)
+
+async def get_user_info(user_id: int) -> dict:
+    await check_user(user_id)
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        rows = await db.execute(
+            "SELECT * FROM money WHERE user_id=?",
+            (
+                user_id,
+            ),
+        )
+        async with rows as cursor:
+            result = await cursor.fetchone()
+            if result is not None:
+                return {"user_id": result[0], "money": result[1], "total_loss": result[2], "total_gain": result[3], "bankrupt_count": result[4], "plays": result[5]}
+            else:
+                return None
+
+async def update_user_info(user_id: int, money: int, total_loss: int, total_gain: int, bankrupt_count: int, plays: int) -> None:
+    await check_user(user_id)
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            "UPDATE money SET money=?, total_loss=?, total_gain=?, bankrupt_count=?, plays=? WHERE user_id=?",
+            (
+                money,
+                total_loss,
+                total_gain,
+                bankrupt_count,
+                plays,
+                user_id,
+            ),
+        )
+        await db.commit()
+
+async def update_user_money(user_id: int, money: int) -> None:
+    await check_user(user_id)
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            "UPDATE money SET money=? WHERE user_id=?",
+            (
+                money,
+                user_id,
+            ),
+        )
+        await db.commit()
+        
+async def play_result(user_id: int, net: int) -> None:
+    await check_user(user_id)
+    current = await get_user_info(user_id)
+    await update_user_info(user_id, current["money"] + net, current["total_loss"] + (net if net < 0 else 0), current["total_gain"] + (net if net > 0 else 0), current["bankrupt_count"] + (1 if net <= 0 else 0), current["plays"] + 1)

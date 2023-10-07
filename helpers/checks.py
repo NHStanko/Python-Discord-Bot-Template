@@ -47,3 +47,21 @@ def not_blacklisted() -> Callable[[T], T]:
         return True
 
     return commands.check(predicate)
+
+
+def gambling_enabled() -> Callable[[T], T]:
+    """
+    This is a custom check to see if the gambling feature is enabled.
+    """
+
+    async def predicate(context: commands.Context) -> bool:
+        with open(
+            f"{os.path.realpath(os.path.dirname(__file__))}/../config/config.json"
+        ) as file:
+            data = json.load(file)
+
+        if not data["gambling"]:
+            raise GamblingDisabled
+        return True
+
+    return commands.check(predicate)

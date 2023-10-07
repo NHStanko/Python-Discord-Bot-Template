@@ -10,6 +10,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext.commands import Context
+import time
 
 from helpers import checks, db_manager
 
@@ -185,12 +186,14 @@ class Owner(commands.Cog, name="owner"):
         embed = discord.Embed(description="Shutting down. Bye! :wave:", color=0x9C84EF)
         await context.send(embed=embed)
         await self.bot.close()
+        await time.sleep(1)
+        await self.bot.login(self.bot.config["token"])
+        
 
-    @commands.command(
+    @commands.hybrid_command(
         name="say",
         description="The bot will say anything you want.",
     )
-    @app_commands.describe(message="The message that should be repeated by the bot")
     @checks.is_owner()
     async def say(self, context: Context, *, message: str) -> None:
         """
@@ -199,7 +202,8 @@ class Owner(commands.Cog, name="owner"):
         :param context: The hybrid command context.
         :param message: The message that should be repeated by the bot.
         """
-        await context.send(message)
+        await context.channel.send(message)
+        await context.reply("Message sent!", ephemeral=True, delete_after=5)
 
     @commands.command(
         name="embed",
@@ -215,6 +219,7 @@ class Owner(commands.Cog, name="owner"):
         :param message: The message that should be repeated by the bot.
         """
         embed = discord.Embed(description=message, color=0x9C84EF)
+        await context.message.delete()
         await context.send(embed=embed)
 
         # @commands.hybrid_group(
@@ -312,22 +317,22 @@ class Owner(commands.Cog, name="owner"):
         :param context: The hybrid command context.
         :param user: The user that should be removed from the blacklist.
         """
-        user_id = user.id
-        if not await db_manager.is_blacklisted(user_id):
-            embed = discord.Embed(
-                description=f"**{user.name}** is not in the blacklist.", color=0xE02B2B
-            )
-            await context.send(embed=embed)
-            return
-        total = await db_manager.remove_user_from_blacklist(user_id)
-        embed = discord.Embed(
-            description=f"**{user.name}** has been successfully removed from the blacklist",
-            color=0x9C84EF,
-        )
-        embed.set_footer(
-            text=f"There {'is' if total == 1 else 'are'} now {total} {'user' if total == 1 else 'users'} in the blacklist"
-        )
-        await context.send(embed=embed)
+        # user_id = user.id
+        # if not await db_manager.is_blacklisted(user_id):
+        #     embed = discord.Embed(
+        #         description=f"**{user.name}** is not in the blacklist.", color=0xE02B2B
+        #     )
+        #     await context.send(embed=embed)
+        #     return
+        # total = await db_manager.remove_user_from_blacklist(user_id)
+        # embed = discord.Embed(
+        #     description=f"**{user.name}** has been successfully removed from the blacklist",
+        #     color=0x9C84EF,
+        # )
+        # embed.set_footer(
+        #     text=f"There {'is' if total == 1 else 'are'} now {total} {'user' if total == 1 else 'users'} in the blacklist"
+        # )
+        # await context.send(embed=embed)
         
     @commands.hybrid_command(
         name="patchnotes",
@@ -342,7 +347,7 @@ class Owner(commands.Cog, name="owner"):
         """
         embed = discord.Embed(title="Sounds Update", color=0x9C84EF)
         embed.description = (
-            "• Renamed `/sounds` to `/sounds list` and made the return ephemeral\n• Added `/sounds count` to list how many times a sound was played\n• Added `/sounds leaderboard` to show the top sounds in the server or per user\n• Can now modify volumes with /modify volume "
+            "• Added gamba command\n• Added set_money (admin only) command\n"
         )
         await context.send(embed=embed)
 

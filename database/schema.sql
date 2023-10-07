@@ -18,3 +18,13 @@ CREATE TABLE IF NOT EXISTS `plays` (
   song_id VARCHAR(20) NOT NULL,
   times_played INTEGER NOT NULL
 );
+
+-- Create a money table, total loss and total gain
+CREATE TABLE IF NOT EXISTS `money` (
+  `user_id` varchar(20) NOT NULL,
+  `money` int(11) NOT NULL DEFAULT '10000',
+  `total_loss` int(11) NOT NULL DEFAULT '0',
+  `total_gain` int(11) NOT NULL DEFAULT '0',
+  `bankrupt_count` int(11) NOT NULL DEFAULT '0',
+  `plays` int(11) NOT NULL DEFAULT '0'
+);

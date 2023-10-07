@@ -27,3 +27,13 @@ class UserNotOwner(commands.CheckFailure):
     def __init__(self, message="User is not an owner of the bot!"):
         self.message = message
         super().__init__(self.message)
+
+
+class GamblingDisabled(commands.CheckFailure):
+    """
+    Thrown when a user is attempting something, but the gambling feature is disabled.
+    """
+
+    def __init__(self, message="Gambling feature is disabled!"):
+        self.message = message
+        super().__init__(self.message)
