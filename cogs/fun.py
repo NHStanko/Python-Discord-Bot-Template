@@ -33,9 +33,9 @@ class Choice(discord.ui.View):
         self.value = "tails"
         self.stop()
 
-@commands.command(name="forsen", description="Real Forsen responses to chats")
+@commands.hybrid_command(brief="Chat with forsen like a chatter", name="forsen")
 async def forsen(ctx: Context) -> None:
-    pass
+    await ctx.send("")
 
 class RockPaperScissors(discord.ui.Select):
     def __init__(self):
