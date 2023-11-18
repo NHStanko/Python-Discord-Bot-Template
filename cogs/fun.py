@@ -33,9 +33,7 @@ class Choice(discord.ui.View):
         self.value = "tails"
         self.stop()
 
-@commands.hybrid_command(brief="Chat with forsen like a chatter", name="forsen")
-async def forsen(ctx: Context) -> None:
-    await ctx.send("")
+
 
 class RockPaperScissors(discord.ui.Select):
     def __init__(self):
@@ -173,7 +171,19 @@ class Fun(commands.Cog, name="fun"):
         await context.send("Please make your choice", view=view)
     # Response : Weight
 
-        
+    @commands.hybrid_command(description="Chat with forsen like a chatter", name="forsen")
+    async def forsen(self, ctx: Context) -> None:
+        test = random.randint(1, 10)
+        if test == 1:
+            await ctx.send("*generating god seed*")
+        elif test == 2:
+            await ctx.send("fuck")
+        elif test == 3:
+            await ctx.send("OOOOOOOO")
+        elif test == 4:
+            await ctx.send("*swedish mumbles*")
+        else:
+            pass
 
     # sex update
     @commands.hybrid_command(
@@ -276,3 +286,4 @@ class Sex_Update(discord.ui.View):
     
 async def setup(bot):
     await bot.add_cog(Fun(bot))
+    
