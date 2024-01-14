@@ -11,19 +11,25 @@ from discord import FFmpegPCMAudio, app_commands
 from discord.ext import commands
 from discord.ext.commands import Context
 from yt_dlp import YoutubeDL
-
 from helpers import checks, db_manager
 
+from time import perf_counter
+
+logger = logging.getLogger("discord_bot")
 
 async def play_sound(guild: discord.Guild, sound: str):
     if not guild.voice_client:
         await guild.author.voice.channel.connect()
     if guild.voice_client.is_playing():
         guild.voice_client.stop()
+    start = perf_counter()
+    logger.info(f"Playing {sound}")
     
     guild.voice_client.play(
         FFmpegPCMAudio(executable="ffmpeg", source=f"sounds/{sound}", options="-af volume=0.75")
     )
+    
+    logger.info(f"Started playing {sound} after {perf_counter()-start} seconds")
 
 
 def get_sound(dir="./sounds"):
