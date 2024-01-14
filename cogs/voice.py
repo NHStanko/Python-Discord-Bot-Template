@@ -20,6 +20,7 @@ async def play_sound(guild: discord.Guild, sound: str):
         await guild.author.voice.channel.connect()
     if guild.voice_client.is_playing():
         guild.voice_client.stop()
+    
     guild.voice_client.play(
         FFmpegPCMAudio(executable="ffmpeg", source=f"sounds/{sound}", options="-af volume=0.75")
     )
