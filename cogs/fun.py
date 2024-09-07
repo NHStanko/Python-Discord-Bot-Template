@@ -10,6 +10,7 @@ import random
 
 import aiohttp
 import discord
+import discord.context_managers
 from discord.ext import commands
 from discord.ext.commands import Context
 
@@ -280,10 +281,62 @@ class Sex_Update(discord.ui.View):
             weighted_responses.extend([key] * value)
         
         await interaction.response.send_message(f"{interaction.user.mention}\n{random.choice(weighted_responses)}", delete_after=60)
-
-
+    
+    
+elon_responses = [
+    "Concerning",
+    "Wow 🤯",
+    "{user}, this will happen here if Kamala is elected",
+    "Wow, this is insane",
+    "Looking into this",
+    "😂",
+    "This has actually happened",
+    "!",
+    "!!",
+    "!!!",
+    "Noted",
+    "My wife left me",
+    "Tragically, this is too often true",
+    "Wow",
+    "🤣🤣",
+    "Probably true",
+    "Yeah",
+    "💯",
+    "Exactly",
+    "Indeed",
+    "Looking into this...",
+    "Concerning...",
+    "🤣💯",
+    "Intersting",
+    "True",
+    "So few understand this",
+]
+    
+async def elon_reply(interaction: discord.Interaction, message: discord.Message) -> None:
 
     
+    response_message = random.choice(elon_responses)
+    if "{user}" in response_message:
+        response_message = response_message.format(user=message.author.display_name)
+    
+    embed = discord.Embed(
+        title=response_message,
+        color=0xFFFFFF
+    )
+    
+    embed.set_author(name="Elon Musk", icon_url="https://pbs.twimg.com/profile_images/1815749056821346304/jS8I28PL_400x400.jpg")
+    await message.reply(embed=embed)
+    await interaction.response.send_message("Replied", ephemeral=True, delete_after=0.1)
+    # End the command here, because we don't want to execute the command again    
+
 async def setup(bot):
+    # Add the cool context menu
+    ctx_menu = discord.app_commands.ContextMenu(
+        name="Elon Reply",
+        callback=elon_reply,
+        type=discord.AppCommandType.message,
+
+    )
+    bot.tree.add_command(ctx_menu)
     await bot.add_cog(Fun(bot))
     

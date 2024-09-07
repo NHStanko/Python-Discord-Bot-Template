@@ -347,7 +347,7 @@ class Owner(commands.Cog, name="owner"):
         """
         embed = discord.Embed(title="Sounds Update", color=0x9C84EF)
         embed.description = (
-            "• Added gamba command\n• Added set_money (admin only) command\n"
+            "• Added an Elon Reply that can be accessed by right clicking on a message and selecting Elon Reply\n"
         )
         await context.send(embed=embed)
 
