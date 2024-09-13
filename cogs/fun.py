@@ -16,6 +16,17 @@ from discord.ext.commands import Context
 
 from helpers import checks
 
+app_register = {}
+
+def app_register_decorator(name, type):
+    def wrapper(func):
+        app_register[name] = {
+            "callback": func,
+            "type": type
+        }
+        return func
+    return wrapper
+
 
 class Choice(discord.ui.View):
     def __init__(self):
@@ -306,15 +317,20 @@ elon_responses = [
     "Indeed",
     "Looking into this...",
     "Concerning...",
-    "🤣💯",
-    "Intersting",
+    "Interesting",
     "True",
     "So few understand this",
+    "That’s a direct quote of Master Yoda!",
+    "Cool",
+    "Deliberate deception for this hoax to be repeated. Even Snopes, who hates {user}, fact checks it as false.",
+    "In my opinion, yes",
+    "I have a bad feeling about this",
+    "I think about this frequently",
+    "I think fate wants this to happen"
 ]
     
+@app_register_decorator(name="Elon Reply", type=discord.AppCommandType.message)
 async def elon_reply(interaction: discord.Interaction, message: discord.Message) -> None:
-
-    
     response_message = random.choice(elon_responses)
     if "{user}" in response_message:
         response_message = response_message.format(user=message.author.display_name)
@@ -331,12 +347,20 @@ async def elon_reply(interaction: discord.Interaction, message: discord.Message)
 
 async def setup(bot):
     # Add the cool context menu
-    ctx_menu = discord.app_commands.ContextMenu(
-        name="Elon Reply",
-        callback=elon_reply,
-        type=discord.AppCommandType.message,
+    # ctx_menu = discord.app_commands.ContextMenu(
+    #     name="Elon Reply",
+    #     callback=elon_reply,
+    #     type=discord.AppCommandType.message,
 
-    )
-    bot.tree.add_command(ctx_menu)
+    # )
+    # bot.tree.add_command(ctx_menu)
+    
+    for name, data in app_register.items():
+        command = discord.app_commands.ContextMenu(
+            name=name,
+            callback=data["callback"],
+            type=data["type"]
+        )
+        bot.tree.add_command(command)
     await bot.add_cog(Fun(bot))
     
