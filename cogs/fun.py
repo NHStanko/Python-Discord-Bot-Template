@@ -295,7 +295,6 @@ class Sex_Update(discord.ui.View):
     
     
 elon_responses = [
-    "Concerning",
     "Wow 🤯",
     "{user}, this will happen here if Kamala is elected",
     "Wow, this is insane",
@@ -320,13 +319,26 @@ elon_responses = [
     "Interesting",
     "True",
     "So few understand this",
-    "That’s a direct quote of Master Yoda!",
     "Cool",
     "Deliberate deception for this hoax to be repeated. Even Snopes, who hates {user}, fact checks it as false.",
     "In my opinion, yes",
     "I have a bad feeling about this",
     "I think about this frequently",
-    "I think fate wants this to happen"
+    "I think fate wants this to happen",
+    "I am constantly insulted on this platform",
+    "This was eye-opening",
+    "{user} is trolling, please ignore",
+    "My tolerance for subtards is limited",
+    "I agree, it isn't working well",
+    "At risk of starting the obvious, there are many attention-seeking trolls on all social media platforms trying to yank your chain. They win if you respond.",
+    "*legal immigration",
+    "Incredibly foolish and wrong statement.",
+    "Every silver lining has a cloud (sigh)",
+    "Where your donation to Wikipedia goes",
+    "You can just say things",
+    "Never heard of {user}, but I certainly agree with them",
+    "This will be fixed shortly"
+
 ]
     
 @app_register_decorator(name="Elon Reply", type=discord.AppCommandType.message)
