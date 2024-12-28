@@ -337,7 +337,9 @@ elon_responses = [
     "Where your donation to Wikipedia goes",
     "You can just say things",
     "Never heard of {user}, but I certainly agree with them",
-    "This will be fixed shortly"
+    "This will be fixed shortly",
+    "Take a big step back and FUCK YOURSELF in the face.",
+    "I will go to war on this issue the likes of which you cannot possible comprehend"
 
 ]
     
