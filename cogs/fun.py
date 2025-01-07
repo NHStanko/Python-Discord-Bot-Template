@@ -331,7 +331,6 @@ elon_responses = [
     "My tolerance for subtards is limited",
     "I agree, it isn't working well",
     "At risk of starting the obvious, there are many attention-seeking trolls on all social media platforms trying to yank your chain. They win if you respond.",
-    "*legal immigration",
     "Incredibly foolish and wrong statement.",
     "Every silver lining has a cloud (sigh)",
     "Where your donation to Wikipedia goes",
@@ -339,8 +338,17 @@ elon_responses = [
     "Never heard of {user}, but I certainly agree with them",
     "This will be fixed shortly",
     "Take a big step back and FUCK YOURSELF in the face.",
-    "I will go to war on this issue the likes of which you cannot possible comprehend"
-
+    "I will go to war on this issue the likes of which you cannot possible comprehend",
+    "F u retard",
+    "Please post a bit more positive, beautiful or informative content on this platform",
+    "True, but why?",
+    "Understated, if anything",
+    "First time I've heard of this",
+    "Let's extradite {user} instead",
+    "Man, I never realized this meme was real 😔",
+    "You make a strong argument",
+    "What!!?? Explain yourself, {user}",
+    "fucks_given == 0 😂"
 ]
     
 @app_register_decorator(name="Elon Reply", type=discord.AppCommandType.message)
