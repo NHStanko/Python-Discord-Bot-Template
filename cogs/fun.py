@@ -348,7 +348,11 @@ elon_responses = [
     "Man, I never realized this meme was real 😔",
     "You make a strong argument",
     "What!!?? Explain yourself, {user}",
-    "fucks_given == 0 😂"
+    "fucks_given == 0 😂",
+    "You have committed a crime",
+    "I take the short bus to work 😂",
+    "{user} is a major grifter and hates America",
+    "Thank you, receipt via 𝕏 acknowledged."
 ]
     
 @app_register_decorator(name="Elon Reply", type=discord.AppCommandType.message)
