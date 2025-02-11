@@ -296,7 +296,6 @@ class Sex_Update(discord.ui.View):
     
 elon_responses = [
     "Wow 🤯",
-    "{user}, this will happen here if Kamala is elected",
     "Wow, this is insane",
     "Looking into this",
     "😂",
@@ -337,8 +336,6 @@ elon_responses = [
     "You can just say things",
     "Never heard of {user}, but I certainly agree with them",
     "This will be fixed shortly",
-    "Take a big step back and FUCK YOURSELF in the face.",
-    "I will go to war on this issue the likes of which you cannot possible comprehend",
     "F u retard",
     "Please post a bit more positive, beautiful or informative content on this platform",
     "True, but why?",
@@ -350,6 +347,7 @@ elon_responses = [
     "What!!?? Explain yourself, {user}",
     "fucks_given == 0 😂",
     "You have committed a crime",
+    "You are breaking the law",
     "I take the short bus to work 😂",
     "{user} is a major grifter and hates America",
     "Thank you, receipt via 𝕏 acknowledged."
