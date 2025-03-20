@@ -364,7 +364,7 @@ async def elon_reply(interaction: discord.Interaction, message: discord.Message)
         color=0xFFFFFF
     )
     
-    embed.set_author(name="Elon Musk", icon_url="https://pbs.twimg.com/profile_images/1815749056821346304/jS8I28PL_400x400.jpg")
+    embed.set_author(name="Elon Musk", icon_url="https://pbs.twimg.com/profile_images/1893803697185910784/Na5lOWi5_400x400.jpg")
     await message.reply(embed=embed)
     await interaction.response.send_message("Replied", ephemeral=True, delete_after=0.1)
     # End the command here, because we don't want to execute the command again    
