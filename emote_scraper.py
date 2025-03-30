@@ -28,7 +28,9 @@ EMOTES_BASE_DIR = "emotes"
 # Manual FFZ emotes
 MANUAL_FFZ_EMOTES = [
     "https://www.frankerfacez.com/emoticon/587063-LULE",
-    "https://www.frankerfacez.com/emoticon/532634-LULWIGuess"
+    "https://www.frankerfacez.com/emoticon/532634-LULWIGuess",
+    "https://www.frankerfacez.com/emoticon/381875-KEKW",
+    "https://www.frankerfacez.com/emoticon/454560-forsenGa"
 ]
 
 # Manual 7TV emotes

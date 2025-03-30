@@ -61,29 +61,48 @@ class AIHelper:
                         response_mime_type: Optional[str] = None,
                         response_schema: Optional[types.Schema] = None,
                         available_emotes: Optional[List[str]] = None,
-                        safety_settings: Optional[List[Dict]] = None) -> Optional[str]:
+                        safety_settings: Optional[List[Dict]] = None,
+                        include_thoughts: bool = False) -> Optional[str]:
         """Generate content using the Gemini API asynchronously"""
         try:
             # Prepare parts and config
             parts = []
+            image_added = False
             
             # Add image if provided
             if image_path:
                 self.logger.info(f"Processing image for Gemini API: {image_path}")
-                file = await self.upload_file(image_path)
-                if file:
-                    parts.append(
-                        types.Part.from_uri(
-                            file_uri=file.uri,
-                            mime_type=file.mime_type,
+                try:
+                    file = await self.upload_file(image_path)
+                    if file:
+                        parts.append(
+                            types.Part.from_uri(
+                                file_uri=file.uri,
+                                mime_type=file.mime_type,
+                            )
                         )
-                    )
-                    self.logger.info(f"Added image to prompt with mime_type: {file.mime_type}")
+                        self.logger.info(f"Added image to prompt with mime_type: {file.mime_type}")
+                        image_added = True
+                    else:
+                        self.logger.warning("Failed to upload image, continuing with text-only request")
+                except Exception as e:
+                    self.logger.error(f"Error adding image to prompt: {e}")
+                    self.logger.warning("Continuing with text-only request")
             
             # Add prompt text
             if prompt:
                 self.logger.info(f"Adding text prompt: {prompt}")
                 parts.append(types.Part.from_text(text=prompt))
+            elif not image_added:
+                # If there's no prompt and image upload failed, add a default prompt
+                default_prompt = "Please analyze this content."
+                self.logger.info(f"Adding default text prompt: {default_prompt}")
+                parts.append(types.Part.from_text(text=default_prompt))
+            
+            # Ensure parts list is not empty
+            if not parts:
+                self.logger.error("No content parts available for the request")
+                return None
             
             # Create content
             contents = [
@@ -98,6 +117,9 @@ class AIHelper:
                 temperature=0.7,
             )
             
+            if include_thoughts:
+                thinking = types.ThinkingConfig(include_thoughts=include_thoughts)
+                generate_content_config.thinking_config = thinking
             # Add response mime type if provided
             if response_mime_type:
                 self.logger.info(f"Setting response MIME type: {response_mime_type}")
@@ -111,19 +133,6 @@ class AIHelper:
             # Add system prompt if provided, possibly with emote information
             if system_prompt:
                 modified_system_prompt = system_prompt
-                
-                # If available_emotes is provided, add it to the system prompt
-                if available_emotes and len(available_emotes) > 0:
-                    # Select a random subset of emotes to show as examples (max 20)
-                    import random
-                    sample_size = min(20, len(available_emotes))
-                    emote_examples = random.sample(available_emotes, sample_size)
-                    
-                    emote_info = "\n\nHere are some available emotes you can use in the messages:\n"
-                    emote_info += ", ".join(emote_examples)
-                    emote_info += "\n\nTry to use these emotes in your responses where appropriate."
-                    
-                    modified_system_prompt += emote_info
                 
                 self.logger.info(f"Setting system prompt: {modified_system_prompt[:100]}...")
                 generate_content_config.system_instruction = [
@@ -142,6 +151,8 @@ class AIHelper:
                     config=generate_content_config,
                 )
             )
+            self.logger.debug(f"Received response from Gemini API: {dir(response)}")
+            self.logger.debug(f"Dumped response pydantic {response.to_json_dict()}")
             
             self.logger.info(f"Received response from Gemini API")
             return response.text
@@ -161,7 +172,7 @@ def load_ai_helper_from_config(config_path: str = "config/config.json", logger=N
         
         api_key = config.get("gemini_api_key")
         model = config.get("gemini_model", "gemini-1.5-flash-002")
-        
+        include_thoughts = config.get("gemini_include_thoughts", False)
         if not api_key:
             if logger:
                 logger.error("No Gemini API key found in config")

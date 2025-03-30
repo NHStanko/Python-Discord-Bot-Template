@@ -12,6 +12,7 @@ import tempfile
 import json
 import re
 import asyncio
+import random
 
 import aiohttp
 import discord
@@ -412,35 +413,63 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     description = None
     url = None
     
-    logger.info(f"Message content: {content_text[:100]}{'...' if len(content_text) > 100 else ''}")
+    logger.info(f"Message content: {content_text}")
+    
+    # List to track temp files for cleanup
+    temp_files = []
     
     # Check for image attachments
     if message.attachments:
-        logger.info(f"Found {len(message.attachments)} attachments")
+        image_count = len([a for a in message.attachments if a.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif'))])
+        logger.info(f"Found {len(message.attachments)} attachments, {image_count} are images")
+        
+        # If there are multiple image attachments, just use the first one for now
+        # Future improvement: combine images or process them in sequence
+        if image_count > 1:
+            logger.info("Multiple images detected, using first image only for now")
+            await interaction.followup.send("Multiple images detected. Using only the first image for now.", ephemeral=True)
+        
+        # Process the first valid image attachment only
         for attachment in message.attachments:
             if attachment.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
                 logger.info(f"Processing image attachment: {attachment.filename}")
-                image_path = await ai_helper.download_image(attachment.url)
-                if not image_path:
-                    await interaction.followup.send("Failed to download the image.", ephemeral=True)
-                    return
-                break
+                try:
+                    image_path = await ai_helper.download_image(attachment.url)
+                    if image_path:
+                        logger.info(f"Successfully downloaded image: {image_path}")
+                        temp_files.append(image_path)
+                        break  # Stop after first successful download
+                    else:
+                        logger.warning(f"Failed to download image: {attachment.filename}")
+                except Exception as e:
+                    logger.error(f"Error processing attachment: {str(e)}")
+                    continue
     
-    # Check embeds for images and metadata
+    # Check embeds for images and metadata if no attachment was successfully processed
     if not image_path and message.embeds:
         logger.info(f"Found {len(message.embeds)} embeds")
         for embed in message.embeds:
             # Check for thumbnail or image
             if embed.thumbnail and embed.thumbnail.url:
                 logger.info(f"Processing embed thumbnail: {embed.thumbnail.url}")
-                image_path = await ai_helper.download_image(embed.thumbnail.url)
-                if image_path:
-                    break
+                try:
+                    image_path = await ai_helper.download_image(embed.thumbnail.url)
+                    if image_path:
+                        temp_files.append(image_path)
+                        break
+                except Exception as e:
+                    logger.error(f"Error processing embed thumbnail: {str(e)}")
+                    continue
             elif embed.image and embed.image.url:
                 logger.info(f"Processing embed image: {embed.image.url}")
-                image_path = await ai_helper.download_image(embed.image.url)
-                if image_path:
-                    break
+                try:
+                    image_path = await ai_helper.download_image(embed.image.url)
+                    if image_path:
+                        temp_files.append(image_path)
+                        break
+                except Exception as e:
+                    logger.error(f"Error processing embed image: {str(e)}")
+                    continue
                     
             # Get title and description
             if embed.title:
@@ -467,6 +496,10 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     # If it is just a user text post, then add the user's name to the prompt
     if not image_path and not title and not description:
         prompt = f"User: {message.author.display_name}\n{prompt}"
+    
+    # Add placeholder text if the prompt is empty to prevent API errors
+    if not prompt.strip():
+        prompt = "Please respond to this image."
         
     logger.info(f"Final prompt prepared: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
     
@@ -697,20 +730,46 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     system_prompt = f"""You are a bot that creates messages to simulate twitch chatters. 
     You are going to create chats imitating Forsen viewers, also known as bajs. 
     Give me 20 messages you would expect Forsen chatters to give as a reaction to this content. 
+    Initially generate 30 messages, then select the best 20.
+    
+    Generate the messages seperate from the usernames. You have a habit of mixing the content of the message with the username.
+    This is fine in the case of something like an xQc fan having an xQc related username.
+    This is not fine in the case of a user having the username AwarenessBaj and then using the awareness emote.
+    Do not use emote names in the username. They can be generic twitch usernames or forsen related usernames.
     
     
     Create a username for each user, 20 characters max, you can add numbers, no slurs. 
     The usernames should be typical Twitch usernames and unrelated to the message content. 
     Only some of the usernames should be related to forsen related content, the rest should be unrelated random usernames you would expect to see on twitch chat.
+    Usernames should be unrelated to the message content or the content of the prompt.
+    They can only be generic twitch usernames or forsen related usernames.
+    I have seen some users that have names like AwarenessBaj and then they use the awareness emote, do not make up usernames like this.
     
+    If there is a "baj" or a forsen fan in the content they see, someone should respond with "I C BAJS".
+    
+    
+    {"You have an xQc fan, also known as a juicer, in the chat." if random.random() < 0.25 else ""}
+    {"Some user will just spam ?????? when they don't know what is going on." if random.random() < 0.25 else ""}
+    {"You can have a user that is a stan for a specific streamer, they will only use that one specific streamer's emotes." if random.random() < 0.25 else ""}
     
     3/4 of the messages should have some sort of emote in them. At least 3/4 of the messages should have non-emote text.
     They should prefer to use forsen's emotes, but can use other emotes. 
-    The messages can spam the same emote multiple times, in fact messages with only emotes are likely to spam multiple emotes
+    The messages can spam the same emote multiple times, in fact messages with only emotes are likely to spam multiple emotes.
+    You should have 2-4 emote spammers in the chat.
+    Some messages should be using forsenCD, forsenPls, or forsenE.
     The messages can be up to 30 characters long unless they are many emotes, those can be up to 50 characters long.
     Feel free to do spams of emote text emote text emote if you want.
     Here is a list of emotes and the number of times they appear in the chat:
     {emote_dict}
+    
+    Do not use any emojis, only use emotes.
+    Do not reference markov chains anywhere in the response.
+    
+    Forsen chat is a wild mix of nostalgia and chaotic humor—a realm where loyalty to Forsen meets a playful disdain for mainstream hype. 
+    These chatters, known as bajs, pride themselves on being both irreverent and unpredictable, often spamming forsenCD, forsenPls, or forsenE to punctuate their inside jokes. 
+    They're quick to poke fun at overhyped streamers and polished mainstream content, preferring instead the raw, meme-driven culture that Forsen embodies. 
+    While a die-hard xQc fan (a so-called 'juicer') might occasionally pop up, most bajs rally around a shared sentiment of authenticity and ironic camaraderie. 
+    They're not just reacting—they're curating a unique blend of sarcastic banter and enthusiastic emote-spam that feels both self-aware and genuinely passionate.
     """
     
     # Define the response schema
@@ -781,7 +840,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
         
         if not response:
             logger.error("AI response was empty or null")
-            await interaction.followup.send("Failed to generate AI response.", ephemeral=True)
+            await interaction.followup.send("Tell Nick there is a problem with the AI", ephemeral=True)
             return
         
         # Parse the JSON response
@@ -795,30 +854,30 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
                 username = chat.get("username", "Unknown")
                 chat_message = chat.get("message", "")
                 formatted_chat += f"**{username}**: {chat_message}\n"
-                logger.debug(f"Chat message: {username}: {chat_message}")
             
             # Generate the image with chat and emotes
             logger.info("Generating Twitch chat image")
             
             # Use asyncio.to_thread (Python 3.9+) or run_in_executor for image generation
             loop = asyncio.get_event_loop()
-            image_path = await loop.run_in_executor(
+            result_image_path = await loop.run_in_executor(
                 None,
                 lambda: create_twitch_chat_image(chat_data, emote_map=emote_map, line_spacing=5)
             )
             
-            if image_path:
+            if result_image_path:
                 # Send the image as a reply
-                await message.reply(file=discord.File(image_path))
+                await message.reply(file=discord.File(result_image_path))
                 
-                # Clean up the generated image
+                # Clean up the generated result image
                 try:
-                    logger.info(f"Cleaning up temporary file: {image_path}")
-                    os.remove(image_path)
+                    logger.info(f"Cleaning up result image file: {result_image_path}")
+                    os.remove(result_image_path)
                 except Exception as e:
-                    logger.error(f"Error cleaning up temporary file: {e}")
+                    logger.error(f"Error cleaning up result image file: {e}")
             else:
                 logger.error("Failed to generate Twitch chat image")
+                await interaction.followup.send("Failed to generate the Twitch chat image.", ephemeral=True)
             
             await interaction.followup.send("Twitch chat simulation generated successfully!", ephemeral=True)
             
@@ -832,14 +891,24 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     except Exception as e:
         logger.exception(f"Error processing emotes or generating image: {str(e)}")
         await interaction.followup.send(f"Someone tell Nick there is a problem with my AI", ephemeral=True)
+    finally:
+        # Clean up all temporary files we've created
+        for temp_file in temp_files:
+            if temp_file and os.path.exists(temp_file):
+                try:
+                    logger.info(f"Cleaning up temporary file: {temp_file}")
+                    os.remove(temp_file)
+                except Exception as e:
+                    logger.error(f"Error cleaning up temporary file {temp_file}: {e}")
     
-    # Clean up temporary file if it exists
+    # This cleanup is now redundant as we handle it in the finally block above
+    # but leaving it to ensure backward compatibility
     if image_path and os.path.exists(image_path):
         try:
-            logger.info(f"Cleaning up temporary file: {image_path}")
+            logger.info(f"Final cleanup check for temporary file: {image_path}")
             os.remove(image_path)
         except Exception as e:
-            logger.error(f"Error cleaning up temporary file: {e}")
+            logger.error(f"Error in final cleanup of temporary file: {e}")
 
 async def setup(bot):
     # Add the cool context menu
