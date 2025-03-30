@@ -151,3 +151,14 @@ discord.log
 # Remove sounds but include airhorn.mp3
 /sounds/*
 !/sounds/airhorn.mp3
+
+emotes/**/*.png
+emotes/**/*.jpg
+emotes/**/*.jpeg
+emotes/**/*.gif
+emotes/**/*.webp
+emotes/**/*.bmp
+emotes/**/*.tiff
+emotes/**/*.ico
+
+emotes/**/*.json

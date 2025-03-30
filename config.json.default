@@ -6,5 +6,8 @@
   "sync_commands_globally": true,
   "owners": [
     123412341234
-  ]
+  ],
+  "gambling": true,
+  "gemini_api_key": "",
+  "gemini_model": ""
 }

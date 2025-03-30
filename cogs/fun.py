@@ -7,6 +7,11 @@ Version: 5.5.0
 """
 
 import random
+import os
+import tempfile
+import json
+import re
+import asyncio
 
 import aiohttp
 import discord
@@ -14,7 +19,11 @@ import discord.context_managers
 from discord.ext import commands
 from discord.ext.commands import Context
 
+
+from helpers.image_gen import create_twitch_chat_image
 from helpers import checks
+from helpers.ai import load_ai_helper_from_config
+from google.genai import types
 
 app_register = {}
 
@@ -245,7 +254,6 @@ sex_responses = {
     "buttplug.io support coming in sex update 2": 1,
     "https://preview.redd.it/10w4ih7rm3z81.jpg?width=640&crop=smart&auto=webp&v=enabled&s=7ca43518d0b8e1f9798b0be00c0577edbbf25756": 1,
     "No war thunder sex update https://preview.redd.it/cdayyf4jndk91.jpg?width=640&crop=smart&auto=webp&v=enabled&s=872b759d7aad274d02cb7d257358494bda0f0070" : 1,
-    "If this so called “sex” (though, as a Redditor, I am unsure what the definition of “sex” is or how to partake in said “sex”) were to be added to the game, it’ll probably be the next top tier 12.0 rank VIII premium pre-order addition costing $60+ along with a shitty decal and title…exclusively for the American tree.": 1,
     "https://i.kym-cdn.com/photos/images/newsfeed/001/842/713/b73.jpg": 5,
     "Victoria 3 segggs??? https://i.imgur.com/50I4er5.png": 1,
     "Stellaris sex update https://pm1.narvii.com/7868/2d433f9e7960782db5f1c813bdb7e70e8a4fe636r1-1920-1080v2_hq.jpg": 1,
@@ -368,6 +376,564 @@ async def elon_reply(interaction: discord.Interaction, message: discord.Message)
     await message.reply(embed=embed)
     await interaction.response.send_message("Replied", ephemeral=True, delete_after=0.1)
     # End the command here, because we don't want to execute the command again    
+    
+@app_register_decorator(name="test", type=discord.AppCommandType.message)
+async def test(interaction: discord.Interaction, message: discord.Message) -> None:
+    await interaction.response.send_message("test", ephemeral=True, delete_after=0.1)
+
+import re
+
+@app_register_decorator(name="Test Thumbnail", type=discord.AppCommandType.message)
+async def test_thumbnail(interaction: discord.Interaction, message: discord.Message) -> None:
+    """
+    Downloads an image from a message if it contains an image attachment or embed thumbnail/image.
+    Also, if the message is a YouTube video or an article, attempts to retrieve the title and description.
+    
+    Parameters:
+    - interaction: The interaction that triggered this command.
+    - message: The message being acted upon.
+    """
+    url = None
+    filename = None
+    title = None
+    description = None
+
+    # First, check if the message has an image attachment.
+    if message.attachments:
+        for attachment in message.attachments:
+            if attachment.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                url = attachment.url
+                filename = attachment.filename
+                break
+
+    # Next, check embeds for an image (thumbnail or embed image) and for title/description.
+    if message.embeds:
+        for embed in message.embeds:
+            # If no image URL was found, check the embed for a thumbnail or image.
+            if not url:
+                if embed.thumbnail and embed.thumbnail.url:
+                    url = embed.thumbnail.url
+                    filename = "thumbnail.jpg"
+                elif embed.image and embed.image.url:
+                    url = embed.image.url
+                    filename = "embedded_image.jpg"
+            # Also, try to obtain title and description from the embed.
+            if embed.title:
+                title = embed.title
+            if embed.description:
+                description = embed.description
+            # Stop if we've found any title or description.
+            if title or description:
+                break
+
+    result_message = ""
+
+    # Download the image if a URL was found.
+    if url:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    content = await response.read()
+                    with open(filename, "wb") as f:
+                        f.write(content)
+                    result_message += f"Downloaded image saved as `{filename}`.\n"
+                else:
+                    result_message += "Failed to download the image.\n"
+    else:
+        result_message += "No image found in the message.\n"
+
+    # If no title/description was found from the embed, try to fetch them from the page,
+    # but only if the URL seems to point to YouTube or an article.
+    if not (title or description) and url:
+        if any(x in url for x in ["youtube.com", "youtu.be", "article", "news"]):
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        page_content = await response.text()
+                        # Try to extract the <title> tag.
+                        title_match = re.search(r"<title>(.*?)</title>", page_content, re.IGNORECASE | re.DOTALL)
+                        if title_match:
+                            title = title_match.group(1).strip()
+                        # Try to extract the meta description, but only for non-YouTube URLs
+                        if not any(x in url for x in ["youtube.com", "youtu.be"]):
+                            desc_match = re.search(
+                                r'<meta\s+name=["\']description["\']\s+content=["\'](.*?)["\']',
+                                page_content,
+                                re.IGNORECASE
+                            )
+                            if desc_match:
+                                description = desc_match.group(1).strip()
+                    else:
+                        result_message += "Failed to fetch the page for title/description.\n"
+
+    if title:
+        result_message += f"Title: {title}\n"
+    if description:
+        result_message += f"Description: {description}\n"
+
+    if result_message == "":
+        result_message = "No image, title, or description found."
+
+    await interaction.response.send_message(result_message, ephemeral=True)
+
+@app_register_decorator(name="Bajs React", type=discord.AppCommandType.message)
+async def test_ai(interaction: discord.Interaction, message: discord.Message) -> None:
+    """
+    Generate a simulated Twitch chat response based on the message content using Gemini AI.
+    
+    Parameters:
+    - interaction: The interaction that triggered this command.
+    - message: The message being acted upon.
+    """
+    # Notify the user that we're processing
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    
+    # Get the logger from the bot
+    logger = interaction.client.logger
+    logger.info(f"Processing TwitchChat AI request for message ID: {message.id} from user: {interaction.user.name}")
+    
+    # Load the AI helper
+    ai_helper = load_ai_helper_from_config(logger=logger)
+    if not ai_helper:
+        logger.error("Failed to initialize AI helper")
+        await interaction.followup.send("Failed to initialize AI helper. Check your API key configuration.", ephemeral=True)
+        return
+    
+    # Initialize variables
+    content_text = message.content or ""
+    image_path = None
+    title = None
+    description = None
+    url = None
+    
+    logger.info(f"Message content: {content_text[:100]}{'...' if len(content_text) > 100 else ''}")
+    
+    # Check for image attachments
+    if message.attachments:
+        logger.info(f"Found {len(message.attachments)} attachments")
+        for attachment in message.attachments:
+            if attachment.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                logger.info(f"Processing image attachment: {attachment.filename}")
+                image_path = await ai_helper.download_image(attachment.url)
+                if not image_path:
+                    await interaction.followup.send("Failed to download the image.", ephemeral=True)
+                    return
+                break
+    
+    # Check embeds for images and metadata
+    if not image_path and message.embeds:
+        logger.info(f"Found {len(message.embeds)} embeds")
+        for embed in message.embeds:
+            # Check for thumbnail or image
+            if embed.thumbnail and embed.thumbnail.url:
+                logger.info(f"Processing embed thumbnail: {embed.thumbnail.url}")
+                image_path = await ai_helper.download_image(embed.thumbnail.url)
+                if image_path:
+                    break
+            elif embed.image and embed.image.url:
+                logger.info(f"Processing embed image: {embed.image.url}")
+                image_path = await ai_helper.download_image(embed.image.url)
+                if image_path:
+                    break
+                    
+            # Get title and description
+            if embed.title:
+                title = embed.title
+                logger.info(f"Found embed title: {title}")
+            if embed.description:
+                description = embed.description
+                logger.info(f"Found embed description: {description[:100]}{'...' if len(description) > 100 else ''}")
+            
+            # Get URL from embed
+            if embed.url:
+                url = embed.url
+                logger.info(f"Found embed URL: {url}")
+    
+    # Prepare the prompt
+    prompt = content_text
+    if title:
+        prompt = f"Title: {title}\n{prompt}"
+    if description:
+        prompt = f"{prompt}\nDescription: {description}"
+    if url and not image_path:
+        prompt = f"{prompt}\nURL: {url}"
+        
+    # If it is just a user text post, then add the user's name to the prompt
+    if not image_path and not title and not description:
+        prompt = f"User: {message.author.display_name}\n{prompt}"
+        
+    logger.info(f"Final prompt prepared: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
+    
+    emote_dict = {
+    'forsenE': 67968446,
+    'Clap': 36751093,
+    'TriHard': 32209388,
+    'forsenPls': 30788440,
+    'FeelsGoodMan': 27848666,
+    'PagMan': 23692936,
+    'gachiGASM': 22453685,
+    'forsenDiscoSnake': 20860964,
+    'LULE': 19186259,
+    'forsenParty': 19147718,
+    'NaM': 18884809,
+    'gachiBASS': 17632028,
+    'LULW': 15601626,
+    'Okayeg': 14792912,
+    'TeaTime': 13960502,
+    'GachiPls': 12845541,
+    'PianoTime': 12809867,
+    'FeelsBadMan': 12735551,
+    'DansGame': 12540831,
+    'LuL': 12424015,
+    'PogChamp': 11956327,
+    'WAYTOODANK': 11713382,
+    'WutFace': 11574868,
+    'haHAA': 11277717,
+    'forsenLevel': 11166786,
+    'monkaS': 10655626,
+    'AlienPls': 10487046,
+    'Pepega': 9002755,
+    'forsenLaughingAtYou': 8209794,
+    'doctorDance': 8195773,
+    'cmonBruh': 7869622,
+    'Aware': 7863224,
+    'BatChest': 7733034,
+    'GuitarTime': 7732976,
+    'forsenPuke': 7610059,
+    'monkaOMEGA': 7301329,
+    'Pog': 6629569,
+    'PepeHands': 6591039,
+    'KKool': 6337783,
+    'ppHop': 6100755,
+    'PoroSad': 5856785,
+    'FeelsStrongMan': 5753032,
+    'forsenInsane': 5618089,
+    'Copesen': 5534753,
+    'headBang': 5340305,
+    'forsenSWA': 5337411,
+    'nyanPls': 5283919,
+    'gachiHYPER': 5256199,
+    'forsenPossessed': 5183168,
+    'LUL': 5083165,
+    ':tf:': 5066067,
+    'forsenPuke6': 5033415,
+    'gachiPRIDE': 4967071,
+    'FeelsOkayMan': 4950106,
+    'nymnCorn': 4864366,
+    'forsenCD': 4581894,
+    'ZULUL': 4411217,
+    'ppHopper': 4395252,
+    'forsenDisco': 4350557,
+    'Pepege': 4329288,
+    'ANELE': 4316831,
+    'KKona': 4295224,
+    'forsenCoomer': 4257688,
+    '4Head': 4254205,
+    'forsenY': 4190782,
+    'batJAM': 4131346,
+    'EleGiggle': 4011944,
+    'Kreygasm': 3948642,
+    'MegaLUL': 3873569,
+    'sadE': 3706742,
+    'Sadge': 3678830,
+    'ABDULpls': 3613492,
+    'PauseMan': 3505042,
+    'griphtSen': 3425822,
+    'forsenBased': 3359370,
+    'pepeJAM': 3247994,
+    'bu1zerTirol': 3235443,
+    'forsenMaxLevel': 3229194,
+    'VoHiYo': 3196345,
+    'Clueless': 3127460,
+    'MODS': 3075744,
+    'MEGALUL': 2998140,
+    'ForsenLookingAtYou': 2890872,
+    'FailFish': 2882829,
+    ':)': 2871434,
+    'AlienDance': 2841981,
+    'forsenDespair': 2813298,
+    'Pepepains': 2811217,
+    'RebeccaBlack': 2805842,
+    'happE': 2798151,
+    'SwiftRage': 2787875,
+    'forsSmash': 2786215,
+    'billyReady': 2767706,
+    'AlienPls3': 2766487,
+    'PepeLaugh': 2682211,
+    'Jebaited': 2676030,
+    'forsenPuke7': 2563700,
+    'hackerCD': 2551433,
+    'ViolinTime': 2504018,
+    'BabyRage': 2486070,
+    'D:': 2485098,
+    'pajaW': 2480165,
+    'RlyTho': 2465593,
+    'PepeS': 2431521,
+    'forsenL': 2415178,
+    'BibleThump': 2402895,
+    'KKonaW': 2394954,
+    'YOURM0M': 2352272,
+    'DonaldPls': 2342455,
+    'dankHug': 2281522,
+    'BloodTrail': 2219742,
+    'forsenJAM': 2215023,
+    'monkaE': 2205076,
+    'zululDrums': 2202765,
+    'forsenBB': 2188423,
+    'ResidentSleeper': 2187455,
+    'TriKool': 2159550,
+    'monkaLaugh': 2154595,
+    'SMOrc': 2136576,
+    'elisSpin': 2098201,
+    'forsenPuke3': 2097305,
+    'forsenBoys': 2083332,
+    'forsenPuke2': 2082618,
+    'ZULOL': 2061099,
+    'forsenShuffle': 2049848,
+    'gachiAPPROVE': 2040004,
+    'Okayge': 2030249,
+    'PotFriend': 1992635,
+    'forsenEmote2': 1985131,
+    'MingLee': 1958333,
+    'forsenWiggle': 1945090,
+    'forsen1': 1941361,
+    'forsenJoy': 1919972,
+    'kodykaNut': 1911197,
+    'forsenSmug': 1807194,
+    'Kappa': 1799606,
+    'forsenGun': 1774834,
+    'forsenMODS': 1771398,
+    'amongE': 1680614,
+    'SmugTime': 1676055,
+    'xqcL': 1663353,
+    'ppBounce': 1651937,
+    'forsenWut': 1646043,
+    'forsenKek': 1643941,
+    'HandsUp': 1641761,
+    'flushE': 1633737,
+    'forsenSleeper': 1632182,
+    'forsenSpin': 1619728,
+    'RareParrot': 1597115,
+    'NotLikeThis': 1594561,
+    'HeyGuys': 1581032,
+    'Kapp': 1567683,
+    'KKaper': 1559241,
+    'pepeL': 1558705,
+    'forsenRun': 1554738,
+    'forsenOhiomaxcape': 1517475,
+    'ConcernDoge': 1511898,
+    'forsenBruh': 1500891,
+    'KKalinka': 1499946,
+    'forsenS': 1478870,
+    'forsenScoots': 1468902,
+    'forsenClown': 1467832,
+    'batPls': 1444025,
+    'FluteTime': 1414383,
+    'annytfLebronJam': 1411876,
+    'EatPooPoo': 1410011,
+    'sumSmash': 1392269,
+    'Okayga': 1390266,
+    '4HEad': 1383167,
+    'veryFors': 1378844,
+    'KKomrade': 1366629,
+    'berriyaW': 1350786,
+    'forsenHead': 1313119,
+    'forsenPuke5': 1311143,
+    'forsenH': 1296469,
+    'FBBlock': 1285888,
+    'forsenKUKLE': 1285751,
+    'forsen2': 1274272,
+    'forsenW': 1243139,
+    'forsenK': 1193470,
+    'AYAYA': 1185964,
+    'chnyDance': 1185875,
+    'forsen3': 1168907,
+    'RaccAttack': 1164757,
+    'forsenPuke9': 1158728,
+    'forsenPuke8': 1154669,
+    'forsenLewd': 1150800,
+    'xqcSmug': 1148998,
+    'veiNODDERS': 1139602,
+    'forsenGa': 1131767,
+    '<3': 1129817,
+    'forsenT': 1128630,
+    'forsenHottub': 1116173,
+    'forsenSven': 1108314,
+    'MrDestructoid': 1099362,
+    'forsenWow': 1087868,
+    'FBCatch': 1086660,
+    'forsen4': 1083919,
+    'elisElis': 1074638,
+    'HYPERDANSGAME': 1072314,
+    'forsenLUL': 1068329,
+    'forsenFur': 1052096,
+    'forsenPirate': 1049662,
+    'hasRaid': 1044511,
+    'EZY': 1011053,
+    'FeelsDankMan': 1005692,
+    'forsenGOW': 1002594,
+    'OMEGALUL': 956595,
+    'HYPERBRUH': 911034,
+    'Sadeg': 909605,
+    '4House': 880626,
+    'eShrug': 831009,
+    'FeelsWeirdMan': 770472,
+    'MaN': 686364,
+    'miniDank': 659465,
+    'PagChomp': 587210,
+    'pepeLaugh': 577243,
+    'SupaMaldio': 561837,
+    'MikuStare': 507352,
+}
+
+    
+    # Define the system prompt for Twitch chat simulation
+    system_prompt = f"""You are a bot that creates messages to simulate twitch chatters. 
+    You are going to create chats imitating Forsen viewers, also known as bajs. 
+    Give me 20 messages you would expect Forsen chatters to give as a reaction to this content. 
+    
+    
+    Create a username for each user, 20 characters max, you can add numbers, no slurs. 
+    The usernames should be typical Twitch usernames and unrelated to the message content. 
+    Only some of the usernames should be related to forsen related content, the rest should be unrelated random usernames you would expect to see on twitch chat.
+    
+    
+    3/4 of the messages should have some sort of emote in them. At least 3/4 of the messages should have non-emote text.
+    They should prefer to use forsen's emotes, but can use other emotes. 
+    The messages can spam the same emote multiple times, in fact messages with only emotes are likely to spam multiple emotes
+    The messages can be up to 30 characters long unless they are many emotes, those can be up to 50 characters long.
+    Feel free to do spams of emote text emote text emote if you want.
+    Here is a list of emotes and the number of times they appear in the chat:
+    {emote_dict}
+    """
+    
+    # Define the response schema
+    response_schema = types.Schema(
+        type=types.Type.OBJECT,
+        required=["chats"],
+        properties={
+            "chats": types.Schema(
+                type=types.Type.ARRAY,
+                items=types.Schema(
+                    type=types.Type.OBJECT,
+                    required=["username", "message"],
+                    properties={
+                        "username": types.Schema(
+                            type=types.Type.STRING,
+                        ),
+                        "message": types.Schema(
+                            type=types.Type.STRING,
+                        ),
+                    },
+                ),
+            ),
+        },
+    )
+    
+    # Generate the AI response
+    try:
+        logger.info("Loading emotes from emotes.json")
+        with open("emotes/emotes.json", "r") as f:
+            emotes_data = json.load(f)
+        
+        # Create emote map from global emotes
+        emote_map = {}
+        
+        # Add global emotes from all sources (twitch, bttv, 7tv, ffz)
+        global_emotes = emotes_data.get("global", {})
+        for source, emotes in global_emotes.items():
+            for emote_name, emote_path in emotes.items():
+                emote_map[emote_name] = f"./emotes/{emote_path}"
+        
+        # Add subscriber emotes from all channels
+        subscriber_emotes = emotes_data.get("subscriber_emotes", {})
+        for channel_id, channel_data in subscriber_emotes.items():
+            # Add emotes from all sources (twitch, bttv, 7tv, ffz)
+            for source, emotes in channel_data.items():
+                # Skip loyalty badges which are in a different format
+                if source == "loyalty_badges":
+                    continue
+                
+                for emote_name, emote_path in emotes.items():
+                    emote_map[emote_name] = f"./emotes/{emote_path}"
+        
+        logger.info(f"Loaded {len(emote_map)} emotes")
+        
+        # Now that we have the emotes loaded, we can generate the AI response with emote awareness
+        available_emotes = list(emote_map.keys())
+        
+        # Generate AI response fully asynchronously
+        logger.info("Generating AI response with emote awareness asynchronously...")
+        response = await ai_helper.generate_content(
+            prompt=prompt,
+            image_path=image_path,
+            system_prompt=system_prompt,
+            response_mime_type="application/json",
+            response_schema=response_schema,
+            available_emotes=available_emotes
+        )
+        
+        if not response:
+            logger.error("AI response was empty or null")
+            await interaction.followup.send("Failed to generate AI response.", ephemeral=True)
+            return
+        
+        # Parse the JSON response
+        try:
+            logger.info("Parsing JSON response")
+            chat_data = json.loads(response)
+            
+            # Format the chat messages
+            formatted_chat = ""
+            for chat in chat_data.get("chats", []):
+                username = chat.get("username", "Unknown")
+                chat_message = chat.get("message", "")
+                formatted_chat += f"**{username}**: {chat_message}\n"
+                logger.debug(f"Chat message: {username}: {chat_message}")
+            
+            # Generate the image with chat and emotes
+            logger.info("Generating Twitch chat image")
+            
+            # Use asyncio.to_thread (Python 3.9+) or run_in_executor for image generation
+            loop = asyncio.get_event_loop()
+            image_path = await loop.run_in_executor(
+                None,
+                lambda: create_twitch_chat_image(chat_data, emote_map=emote_map, line_spacing=5)
+            )
+            
+            if image_path:
+                # Send the image as a reply
+                await message.reply(file=discord.File(image_path))
+                
+                # Clean up the generated image
+                try:
+                    logger.info(f"Cleaning up temporary file: {image_path}")
+                    os.remove(image_path)
+                except Exception as e:
+                    logger.error(f"Error cleaning up temporary file: {e}")
+            else:
+                logger.error("Failed to generate Twitch chat image")
+            
+            await interaction.followup.send("Twitch chat simulation generated successfully!", ephemeral=True)
+            
+        except json.JSONDecodeError as e:
+            # If the response isn't valid JSON, just send the raw text
+            logger.error(f"JSON decode error: {e}")
+            logger.error(f"Raw response: {response}")
+            await message.reply(f"AI Response (not properly formatted):\n{response}")
+            await interaction.followup.send("Generated response wasn't in the expected format.", ephemeral=True)
+            
+    except Exception as e:
+        logger.exception(f"Error processing emotes or generating image: {str(e)}")
+        await interaction.followup.send(f"Someone tell Nick there is a problem with my AI", ephemeral=True)
+    
+    # Clean up temporary file if it exists
+    if image_path and os.path.exists(image_path):
+        try:
+            logger.info(f"Cleaning up temporary file: {image_path}")
+            os.remove(image_path)
+        except Exception as e:
+            logger.error(f"Error cleaning up temporary file: {e}")
 
 async def setup(bot):
     # Add the cool context menu

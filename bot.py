@@ -14,6 +14,8 @@ import platform
 import random
 import sys
 
+from logging.handlers import RotatingFileHandler
+
 import aiosqlite
 import discord
 from discord.ext import commands, tasks
@@ -109,23 +111,48 @@ class LoggingFormatter(logging.Formatter):
         formatter = logging.Formatter(format, "%Y-%m-%d %H:%M:%S", style="{")
         return formatter.format(record)
 
-
-logger = logging.getLogger("discord_bot")
-logger.setLevel(logging.INFO)
-
-# Console handler
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(LoggingFormatter())
-# File handler
-file_handler = logging.FileHandler(filename="discord.log", encoding="utf-8", mode="w")
+# Create a formatter for file handlers.
 file_handler_formatter = logging.Formatter(
     "[{asctime}] [{levelname:<8}] {name}: {message}", "%Y-%m-%d %H:%M:%S", style="{"
 )
+
+# Create the main logger and set its level to DEBUG so all messages are processed.
+logger = logging.getLogger("discord_bot")
+logger.setLevel(logging.DEBUG)
+
+# Console handler (only logs INFO and above)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(LoggingFormatter())
+
+# Rotating file handler for normal (INFO and above) messages.
+file_handler = RotatingFileHandler(
+    filename="discord.log",
+    encoding="utf-8",
+    mode="w",
+    maxBytes=10 * 1024 * 1024,  # 10 MB
+    backupCount=5,
+)
+file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(file_handler_formatter)
 
-# Add the handlers
+# Custom rotating file handler for DEBUG messages.
+debug_file_handler = RotatingFileHandler(
+    filename="discord_debug.log",
+    encoding="utf-8",
+    mode="w",
+    maxBytes=10 * 1024 * 1024,  # 10 MB
+    backupCount=5,
+)
+debug_file_handler.setLevel(logging.DEBUG)
+debug_file_handler.setFormatter(file_handler_formatter)
+
+# Add all handlers to the logger.
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
+logger.addHandler(debug_file_handler)
+
+# Attach the logger to the bot.
 bot.logger = logger
 
 
