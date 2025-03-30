@@ -377,104 +377,10 @@ async def elon_reply(interaction: discord.Interaction, message: discord.Message)
     await interaction.response.send_message("Replied", ephemeral=True, delete_after=0.1)
     # End the command here, because we don't want to execute the command again    
     
-@app_register_decorator(name="test", type=discord.AppCommandType.message)
-async def test(interaction: discord.Interaction, message: discord.Message) -> None:
-    await interaction.response.send_message("test", ephemeral=True, delete_after=0.1)
 
 import re
 
-@app_register_decorator(name="Test Thumbnail", type=discord.AppCommandType.message)
-async def test_thumbnail(interaction: discord.Interaction, message: discord.Message) -> None:
-    """
-    Downloads an image from a message if it contains an image attachment or embed thumbnail/image.
-    Also, if the message is a YouTube video or an article, attempts to retrieve the title and description.
-    
-    Parameters:
-    - interaction: The interaction that triggered this command.
-    - message: The message being acted upon.
-    """
-    url = None
-    filename = None
-    title = None
-    description = None
 
-    # First, check if the message has an image attachment.
-    if message.attachments:
-        for attachment in message.attachments:
-            if attachment.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
-                url = attachment.url
-                filename = attachment.filename
-                break
-
-    # Next, check embeds for an image (thumbnail or embed image) and for title/description.
-    if message.embeds:
-        for embed in message.embeds:
-            # If no image URL was found, check the embed for a thumbnail or image.
-            if not url:
-                if embed.thumbnail and embed.thumbnail.url:
-                    url = embed.thumbnail.url
-                    filename = "thumbnail.jpg"
-                elif embed.image and embed.image.url:
-                    url = embed.image.url
-                    filename = "embedded_image.jpg"
-            # Also, try to obtain title and description from the embed.
-            if embed.title:
-                title = embed.title
-            if embed.description:
-                description = embed.description
-            # Stop if we've found any title or description.
-            if title or description:
-                break
-
-    result_message = ""
-
-    # Download the image if a URL was found.
-    if url:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    content = await response.read()
-                    with open(filename, "wb") as f:
-                        f.write(content)
-                    result_message += f"Downloaded image saved as `{filename}`.\n"
-                else:
-                    result_message += "Failed to download the image.\n"
-    else:
-        result_message += "No image found in the message.\n"
-
-    # If no title/description was found from the embed, try to fetch them from the page,
-    # but only if the URL seems to point to YouTube or an article.
-    if not (title or description) and url:
-        if any(x in url for x in ["youtube.com", "youtu.be", "article", "news"]):
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        page_content = await response.text()
-                        # Try to extract the <title> tag.
-                        title_match = re.search(r"<title>(.*?)</title>", page_content, re.IGNORECASE | re.DOTALL)
-                        if title_match:
-                            title = title_match.group(1).strip()
-                        # Try to extract the meta description, but only for non-YouTube URLs
-                        if not any(x in url for x in ["youtube.com", "youtu.be"]):
-                            desc_match = re.search(
-                                r'<meta\s+name=["\']description["\']\s+content=["\'](.*?)["\']',
-                                page_content,
-                                re.IGNORECASE
-                            )
-                            if desc_match:
-                                description = desc_match.group(1).strip()
-                    else:
-                        result_message += "Failed to fetch the page for title/description.\n"
-
-    if title:
-        result_message += f"Title: {title}\n"
-    if description:
-        result_message += f"Description: {description}\n"
-
-    if result_message == "":
-        result_message = "No image, title, or description found."
-
-    await interaction.response.send_message(result_message, ephemeral=True)
 
 @app_register_decorator(name="Bajs React", type=discord.AppCommandType.message)
 async def test_ai(interaction: discord.Interaction, message: discord.Message) -> None:

@@ -6,3 +6,4 @@ PyNaCl
 yt-dlp
 google-genai
 pillow
+beautifulsoup4
