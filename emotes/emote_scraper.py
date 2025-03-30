@@ -25,7 +25,8 @@ BTTV_ZERO_WIDTH = [
 
 # Manual FFZ emotes
 MANUAL_FFZ_EMOTES = [
-    "https://www.frankerfacez.com/emoticon/587063-LULE"
+    "https://www.frankerfacez.com/emoticon/587063-LULE",
+    "https://www.frankerfacez.com/emoticon/532634-LULWIGuess"
 ]
 
 # Manual 7TV emotes
