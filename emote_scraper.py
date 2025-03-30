@@ -425,7 +425,7 @@ def process_manual_ffz_emotes(folder):
     print(f"Downloaded {len(mapping)} manual FFZ emotes")
     return mapping
 
-def update_json(emotes_data, json_path="emotes.json"):
+def update_json(emotes_data, json_path="emotes/emotes.json"):
     """
     Updates the emotes.json file with the given emotes data.
     """
