@@ -22,6 +22,8 @@ BTTV_ZERO_WIDTH = [
     "ReinDeer", "CandyCane", "cvMask", "cvHazmat"
 ]
 
+# Base path for all emotes
+EMOTES_BASE_DIR = "emotes"
 
 # Manual FFZ emotes
 MANUAL_FFZ_EMOTES = [
@@ -157,7 +159,7 @@ def scrape_twitch_loyalty_badges(soup, folder, subid):
             number = m.group(1)
             filename = f"{number}.png"
             filepath = os.path.join(loyalty_folder, filename)
-            rel_filepath = os.path.join(subid, "loyalty", filename)
+            rel_filepath = os.path.join(os.path.basename(folder), "loyalty", filename)
             
             if save_emote_image(image_url, filepath, f"loyalty badge {number}"):
                 badge_mapping[number] = rel_filepath
@@ -429,6 +431,9 @@ def update_json(emotes_data, json_path="emotes/emotes.json"):
     """
     Updates the emotes.json file with the given emotes data.
     """
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(json_path), exist_ok=True)
+    
     if os.path.exists(json_path):
         with open(json_path, "r") as f:
             data = json.load(f)
@@ -474,12 +479,18 @@ def main():
     if args.subscriber:
         channel_id = args.subid
         url_path = args.url if args.url is not None else f"/channels/{channel_id}"
-        folder = channel_id  # folder name is the subscriber id
+        folder_name = channel_id  # folder name is the subscriber id
     else:
         channel_id = "_global"
         url_path = args.url if args.url is not None else "/"
-        folder = "global"
+        folder_name = "global"
 
+    # Create base emotes directory if it doesn't exist
+    if not os.path.exists(EMOTES_BASE_DIR):
+        os.makedirs(EMOTES_BASE_DIR)
+    
+    # Create full folder path
+    folder = os.path.join(EMOTES_BASE_DIR, folder_name)
     if not os.path.exists(folder):
         os.makedirs(folder)
     
