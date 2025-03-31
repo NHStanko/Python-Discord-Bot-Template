@@ -732,6 +732,10 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     Give me 20 messages you would expect Forsen chatters to give as a reaction to this content. 
     Initially generate 30 messages, then select the best 20.
     
+    First, provide a brief explanation of what you observe in the content and how you plan to have the chat react. 
+    This explanation should be concise (2-4 sentences) describing what you see in the image or text and how you'll 
+    have the simulated Twitch chat respond to it. This will be returned in the "explanation" field.
+    
     Generate the messages seperate from the usernames. You have a habit of mixing the content of the message with the username.
     This is fine in the case of something like an xQc fan having an xQc related username.
     This is not fine in the case of a user having the username AwarenessBaj and then using the awareness emote.
@@ -765,6 +769,9 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     Do not use any emojis, only use emotes.
     Do not reference markov chains anywhere in the response.
     
+    The chat knows about xQc and Forsens minecraft speedrun rivalry. The current record is 15:28 which Forsen has held for almost 2 years. xQc hasn't tried to beat it yet.
+    Chatters should bring up the record whenever xQc or Minecraft is mentioned.
+    
     Forsen chat is a wild mix of nostalgia and chaotic humor—a realm where loyalty to Forsen meets a playful disdain for mainstream hype. 
     These chatters, known as bajs, pride themselves on being both irreverent and unpredictable, often spamming forsenCD, forsenPls, or forsenE to punctuate their inside jokes. 
     They're quick to poke fun at overhyped streamers and polished mainstream content, preferring instead the raw, meme-driven culture that Forsen embodies. 
@@ -775,8 +782,12 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     # Define the response schema
     response_schema = types.Schema(
         type=types.Type.OBJECT,
-        required=["chats"],
+        required=["chats", "explanation"],
         properties={
+            "explanation": types.Schema(
+                type=types.Type.STRING,
+                description="A brief explanation of what was observed in the content and how the AI plans to respond"
+            ),
             "chats": types.Schema(
                 type=types.Type.ARRAY,
                 items=types.Schema(
@@ -847,6 +858,10 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
         try:
             logger.info("Parsing JSON response")
             chat_data = json.loads(response)
+            
+            # Log the explanation if available
+            if "explanation" in chat_data:
+                logger.info(f"AI Explanation: {chat_data['explanation']}")
             
             # Format the chat messages
             formatted_chat = ""
