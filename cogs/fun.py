@@ -768,6 +768,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     
     Do not use any emojis, only use emotes.
     Do not reference markov chains anywhere in the response.
+    The emote TeaTime should come after an emote. It should never be the first emote in a chat. It should never come after text.
     
     The chat knows about xQc and Forsens minecraft speedrun rivalry. The current record is 15:28 which Forsen has held for almost 2 years. xQc hasn't tried to beat it yet.
     Chatters should bring up the record whenever xQc or Minecraft is mentioned.
