@@ -490,12 +490,8 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
         prompt = f"Title: {title}\n{prompt}"
     if description:
         prompt = f"{prompt}\nDescription: {description}"
-    if url and not image_path:
+    if url and title:
         prompt = f"{prompt}\nURL: {url}"
-        
-    # If it is just a user text post, then add the user's name to the prompt
-    if not image_path and not title and not description:
-        prompt = f"User: {message.author.display_name}\n{prompt}"
     
     # Add placeholder text if the prompt is empty to prevent API errors
     if not prompt.strip():
