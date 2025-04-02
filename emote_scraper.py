@@ -30,11 +30,14 @@ MANUAL_FFZ_EMOTES = [
     "https://www.frankerfacez.com/emoticon/587063-LULE",
     "https://www.frankerfacez.com/emoticon/532634-LULWIGuess",
     "https://www.frankerfacez.com/emoticon/381875-KEKW",
-    "https://www.frankerfacez.com/emoticon/454560-forsenGa"
+    "https://www.frankerfacez.com/emoticon/454560-forsenGa",
+    
 ]
 
 # Manual 7TV emotes
 MANUAL_7TV_EMOTES = [
+    "https://7tv.app/emotes/6446d232649f94e97473d7e3",
+    "https://7tv.app/emotes/01F7H836GR000EMPHK5YSK0K1F"
 ]
 
 # Manual BTTV emotes
