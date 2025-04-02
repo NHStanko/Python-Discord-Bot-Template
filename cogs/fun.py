@@ -484,7 +484,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
                 url = embed.url
                 logger.info(f"Found embed URL: {url}")
     
-    logger.info(f"embed values: {embed.to_dict()}")
+        logger.info(f"embed values: {embed.to_dict()}")
     
     # Prepare the prompt
     prompt = content_text
