@@ -420,12 +420,14 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     
     # Check for image attachments
     if message.attachments:
-        extensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.ico']
+        extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.ico')
         images = [a for a in message.attachments if a.filename.lower().endswith(extensions)]
         image_count = len(images)
         logger.info(f"Found {len(message.attachments)} attachments, {image_count} are images")
         
-        logger.warning(f"Found attachments with weird extensions {a for a in message.attachments if not a.filename.lower().endswith(extensions)}")
+        non_image_attachments = [a.filename for a in message.attachments if not a.filename.lower().endswith(extensions)]
+        if non_image_attachments:
+            logger.warning(f"Found attachments with unsupported extensions: {non_image_attachments}")
         
         # If there are multiple image attachments, just use the first one for now
         # Future improvement: combine images or process them in sequence
