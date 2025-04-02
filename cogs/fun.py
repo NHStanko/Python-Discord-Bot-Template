@@ -499,9 +499,18 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     if url and title:
         prompt = f"{prompt}\nURL: {url}"
     
+    if not prompt.strip() and not image_path:
+        # Respond to the interaction saying there is a problem with the AI
+        await interaction.followup.send("Tell Nick there is a problem with the AI", ephemeral=True)
+        return
+    
     # Add placeholder text if the prompt is empty to prevent API errors
-    if url and not title and not description and image_path:
+    if (url and not title and not description and image_path) or not prompt.strip():
         prompt = "Please respond to this image."
+        
+    
+        
+
         
     logger.info(f"Final prompt prepared: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
     
