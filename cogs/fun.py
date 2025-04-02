@@ -484,6 +484,8 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
                 url = embed.url
                 logger.info(f"Found embed URL: {url}")
     
+    logger.info(f"embed values: {embed.to_dict()}")
+    
     # Prepare the prompt
     prompt = content_text
     if title:
@@ -494,7 +496,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
         prompt = f"{prompt}\nURL: {url}"
     
     # Add placeholder text if the prompt is empty to prevent API errors
-    if not prompt.strip():
+    if url and not title and not description and image_path:
         prompt = "Please respond to this image."
         
     logger.info(f"Final prompt prepared: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
@@ -729,6 +731,8 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     Initially generate 30 messages, then select the best 20.
     
     First, provide a brief explanation of what you observe in the content and how you plan to have the chat react. 
+    You should really think about the contents of the image and see if there are any inside jokes or references you can make,
+    especially with regards to forsen or other streamers.
     This explanation should be concise (2-4 sentences) describing what you see in the image or text and how you'll 
     have the simulated Twitch chat respond to it. This will be returned in the "explanation" field.
     
@@ -749,13 +753,15 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     
     
     {"You have an xQc fan, also known as a juicer, in the chat." if random.random() < 0.25 else ""}
-    {"Some user will just spam ?????? when they don't know what is going on." if random.random() < 0.25 else ""}
+    {"Some user will just spam ?????? when they don't know what is going on." if random.random() < 0.50 else ""}
     {"You can have a user that is a stan for a specific streamer, they will only use that one specific streamer's emotes." if random.random() < 0.25 else ""}
+    {"You should have one user with the username flickerfireheart, they are a baj and juicer" if random.random() < 0.25 else ""}
     
-    3/4 of the messages should have some sort of emote in them. At least 3/4 of the messages should have non-emote text.
+    9/10 of the messages should have some sort of emote in them. At least 3/4 of the messages should have non-emote text.
     They should prefer to use forsen's emotes, but can use other emotes. 
     The messages can spam the same emote multiple times, in fact messages with only emotes are likely to spam multiple emotes.
-    You should have 2-4 emote spammers in the chat.
+    You should have at least 4 emote spammers in the chat.
+    The emote spammers can occassionally have the format EMOTE text EMOTE text EMOTE
     Some messages should be using forsenCD, forsenPls, or forsenE.
     The messages can be up to 30 characters long unless they are many emotes, those can be up to 50 characters long.
     Feel free to do spams of emote text emote text emote if you want.
@@ -767,7 +773,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     The emote TeaTime should come after an emote. It should never be the first emote in a chat. It should never come after text.
     
     The chat knows about xQc and Forsens minecraft speedrun rivalry. The current record is 15:28 which Forsen has held for almost 2 years. xQc hasn't tried to beat it yet.
-    Chatters should bring up the record whenever xQc or Minecraft is mentioned.
+    Chatters should bring up the record whenever xQc or Minecraft is mentioned. They should only bring it up in the context of xQc or Minecraft.
     
     Forsen chat is a wild mix of nostalgia and chaotic humor—a realm where loyalty to Forsen meets a playful disdain for mainstream hype. 
     These chatters, known as bajs, pride themselves on being both irreverent and unpredictable, often spamming forsenCD, forsenPls, or forsenE to punctuate their inside jokes. 

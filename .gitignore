@@ -164,3 +164,5 @@ emotes/**/*.ico
 emotes/**/*.json
 
 test.sh
+
+debug/*

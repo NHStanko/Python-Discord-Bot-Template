@@ -4,18 +4,52 @@ import tempfile
 import logging
 import aiohttp
 import asyncio
+import shutil
+from datetime import datetime
 from pathlib import Path
 from google import genai
 from google.genai import types
 from typing import List, Dict, Any, Optional, Union
 
 class AIHelper:
-    def __init__(self, api_key: str, model: str = "gemini-1.5-flash-002", logger=None):
+    def __init__(self, api_key: str, model: str = "gemini-1.5-flash-002", logger=None, debug_mode: bool = False):
         """Initialize the AI helper with API key and model"""
         self.api_key = api_key
         self.model = model
         self.client = genai.Client(api_key=api_key)
         self.logger = logger or logging.getLogger("discord_bot")
+        self.debug_mode = debug_mode
+        if debug_mode:
+            self.debug_folder = Path("debug")
+            self.debug_file = self.debug_folder / "debug.json"
+            self.debug_folder.mkdir(exist_ok=True)
+            if not self.debug_file.exists():
+                with open(self.debug_file, 'w') as f:
+                    json.dump({"requests": []}, f)
+    
+    async def _save_debug_info(self, request_data: Dict[str, Any]) -> None:
+        """Save debug information to debug.json"""
+        if not self.debug_mode:
+            return
+            
+        try:
+            # Load existing debug data
+            with open(self.debug_file, 'r') as f:
+                debug_data = json.load(f)
+            
+            # Add timestamp to request data
+            request_data['timestamp'] = datetime.now().isoformat()
+            
+            # Add to requests array
+            debug_data['requests'].append(request_data)
+            
+            # Save back to file
+            with open(self.debug_file, 'w') as f:
+                json.dump(debug_data, f, indent=2)
+                
+            self.logger.info("Debug information saved successfully")
+        except Exception as e:
+            self.logger.error(f"Error saving debug information: {e}")
     
     async def download_image(self, url: str) -> Optional[str]:
         """Download an image from a URL and save it to a temporary file"""
@@ -65,6 +99,17 @@ class AIHelper:
                         include_thoughts: bool = False) -> Optional[str]:
         """Generate content using the Gemini API asynchronously"""
         try:
+            # Prepare debug data if debug mode is enabled
+            debug_data = {
+                "input": {
+                    "prompt": prompt,
+                    "system_prompt": system_prompt,
+                    "image_path": image_path,
+                    "response_mime_type": response_mime_type,
+                    "available_emotes": available_emotes
+                }
+            }
+            
             # Prepare parts and config
             parts = []
             image_added = False
@@ -83,6 +128,12 @@ class AIHelper:
                         )
                         self.logger.info(f"Added image to prompt with mime_type: {file.mime_type}")
                         image_added = True
+                        
+                        # Copy image to debug folder if debug mode is enabled
+                        if self.debug_mode:
+                            debug_image_path = self.debug_folder / f"debug_image_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                            shutil.copy2(image_path, debug_image_path)
+                            debug_data["input"]["debug_image_path"] = str(debug_image_path)
                     else:
                         self.logger.warning("Failed to upload image, continuing with text-only request")
                 except Exception as e:
@@ -139,7 +190,6 @@ class AIHelper:
                     types.Part.from_text(text=modified_system_prompt),
                 ]
             
-            
             # Generate content asynchronously using run_in_executor
             self.logger.info(f"Sending request to Gemini API using model: {self.model}")
             loop = asyncio.get_event_loop()
@@ -155,9 +205,22 @@ class AIHelper:
             self.logger.debug(f"Dumped response pydantic {response.to_json_dict()}")
             
             self.logger.info(f"Received response from Gemini API")
+            
+            # Save debug information if debug mode is enabled
+            if self.debug_mode:
+                debug_data["output"] = {
+                    "text": response.text,
+                    "model": self.model,
+                    "response_dict": response.to_json_dict()
+                }
+                await self._save_debug_info(debug_data)
+            
             return response.text
         except Exception as e:
             self.logger.error(f"Error generating content: {e}")
+            if self.debug_mode:
+                debug_data["error"] = str(e)
+                await self._save_debug_info(debug_data)
             return None
 
 # Helper function to load the AI helper from config
@@ -173,6 +236,8 @@ def load_ai_helper_from_config(config_path: str = "config/config.json", logger=N
         api_key = config.get("gemini_api_key")
         model = config.get("gemini_model", "gemini-1.5-flash-002")
         include_thoughts = config.get("gemini_include_thoughts", False)
+        debug_mode = config.get("gemini_debug", False)
+        
         if not api_key:
             if logger:
                 logger.error("No Gemini API key found in config")
@@ -180,9 +245,9 @@ def load_ai_helper_from_config(config_path: str = "config/config.json", logger=N
             return None
         
         if logger:
-            logger.info(f"AI helper initialized with model: {model}")
+            logger.info(f"AI helper initialized with model: {model}, debug mode: {debug_mode}")
         
-        return AIHelper(api_key=api_key, model=model, logger=logger)
+        return AIHelper(api_key=api_key, model=model, logger=logger, debug_mode=debug_mode)
     except Exception as e:
         if logger:
             logger.error(f"Error loading AI helper from config: {e}")
