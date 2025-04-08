@@ -938,7 +938,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
                 logger.error("Failed to generate Twitch chat image")
                 await interaction.followup.send("Failed to generate the Twitch chat image.", ephemeral=True)
             
-            await interaction.followup.send("Twitch chat simulation generated successfully!", ephemeral=True)
+            await interaction.followup.send(f"Twitch chat simulation generated successfully!\n Description: {chat_data['explanation']}", ephemeral=True)
             
         except json.JSONDecodeError as e:
             # If the response isn't valid JSON, log the failure and the raw response
