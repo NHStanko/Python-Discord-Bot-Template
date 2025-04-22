@@ -361,6 +361,124 @@ elon_responses = [
     "{user} is a major grifter and hates America",
     "Thank you, receipt via 𝕏 acknowledged."
 ]
+
+async def extract_message_content(message, interaction, logger):
+    """
+    Extract content from a message for AI processing.
+    
+    Parameters:
+    - message: The Discord message to extract content from
+    - interaction: The interaction that triggered this command
+    - logger: Logger instance for logging
+    
+    Returns:
+    - Tuple of (content_text, image_path, title, description, url, temp_files)
+    """
+    # Initialize variables
+    content_text = message.content or ""
+    image_path = None
+    title = None
+    description = None
+    url = None
+    
+    logger.info(f"Message content: {content_text}")
+    
+    # List to track temp files for cleanup
+    temp_files = []
+    
+    # Check for image attachments
+    if message.attachments:
+        extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.ico')
+        images = [a for a in message.attachments if a.filename.lower().endswith(extensions)]
+        image_count = len(images)
+        logger.info(f"Found {len(message.attachments)} attachments, {image_count} are images")
+        
+        non_image_attachments = [a.filename for a in message.attachments if not a.filename.lower().endswith(extensions)]
+        if non_image_attachments:
+            logger.warning(f"Found attachments with unsupported extensions: {non_image_attachments}")
+        
+        # If there are multiple image attachments, just use the first one for now
+        if image_count > 1:
+            logger.info("Multiple images detected, using first image only for now")
+            await interaction.followup.send("Multiple images detected. Using only the first image for now.", ephemeral=True)
+        
+        # Process the first valid image attachment only
+        for attachment in message.attachments:
+            if attachment.filename.lower().endswith(extensions):
+                logger.info(f"Processing image attachment: {attachment.filename}")
+                try:
+                    # Load AI helper to use its download_image function
+                    ai_helper = load_ai_helper_from_config(logger=logger)
+                    if not ai_helper:
+                        logger.error("Failed to initialize AI helper")
+                        return content_text, None, title, description, url, temp_files
+                        
+                    image_path = await ai_helper.download_image(attachment.url)
+                    if image_path:
+                        logger.info(f"Successfully downloaded image: {image_path}")
+                        temp_files.append(image_path)
+                        break  # Stop after first successful download
+                    else:
+                        logger.warning(f"Failed to download image: {attachment.filename}")
+                except Exception as e:
+                    logger.error(f"Error processing attachment: {str(e)}")
+                    continue
+    
+    # Check embeds for images and metadata if no attachment was successfully processed
+    if not image_path and message.embeds:
+        logger.info(f"Found {len(message.embeds)} embeds")
+        for embed in message.embeds:
+            # Check for thumbnail or image
+            if embed.thumbnail and embed.thumbnail.url:
+                logger.info(f"Processing embed thumbnail: {embed.thumbnail.url}")
+                try:
+                    # Load AI helper to use its download_image function
+                    ai_helper = load_ai_helper_from_config(logger=logger)
+                    if not ai_helper:
+                        logger.error("Failed to initialize AI helper")
+                        return content_text, None, title, description, url, temp_files
+                        
+                    image_path = await ai_helper.download_image(embed.thumbnail.url)
+                    if image_path:
+                        temp_files.append(image_path)
+                        break
+                except Exception as e:
+                    logger.error(f"Error processing embed thumbnail: {str(e)}")
+                    continue
+            elif embed.image and embed.image.url:
+                logger.info(f"Processing embed image: {embed.image.url}")
+                try:
+                    # Load AI helper to use its download_image function
+                    ai_helper = load_ai_helper_from_config(logger=logger)
+                    if not ai_helper:
+                        logger.error("Failed to initialize AI helper")
+                        return content_text, None, title, description, url, temp_files
+                        
+                    image_path = await ai_helper.download_image(embed.image.url)
+                    if image_path:
+                        temp_files.append(image_path)
+                        break
+                except Exception as e:
+                    logger.error(f"Error processing embed image: {str(e)}")
+                    continue
+                    
+            # Get title and description
+            if embed.title:
+                title = embed.title
+                logger.info(f"Found embed title: {title}")
+            if embed.description:
+                description = embed.description
+                logger.info(f"Found embed description: {description[:100]}{'...' if len(description) > 100 else ''}")
+            
+            # Get URL from embed
+            if embed.url:
+                url = embed.url
+                logger.info(f"Found embed URL: {url}")
+    
+        if embed and hasattr(embed, 'to_dict'):
+            logger.info(f"embed values: {embed.to_dict()}")
+            
+    return content_text, image_path, title, description, url, temp_files
     
 @app_register_decorator(name="Elon Reply", type=discord.AppCommandType.message)
 async def elon_reply(interaction: discord.Interaction, message: discord.Message) -> None:
@@ -379,9 +497,115 @@ async def elon_reply(interaction: discord.Interaction, message: discord.Message)
     # End the command here, because we don't want to execute the command again    
     
 
-import re
+@app_register_decorator(name="xQc Explains", type=discord.AppCommandType.message)
+async def xqc_explains(interaction: discord.Interaction, message: discord.Message) -> None:
+    """
+    Generate an explanation in xQc's style for the given message content.
+    
+    Parameters:
+    - interaction: The interaction that triggered this command
+    - message: The message being acted upon
+    """
+    # Notify the user that we're processing
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    
+    # Get the logger from the bot
+    logger = interaction.client.logger
+    logger.info(f"Processing xQc Explains request for message ID: {message.id} from user: {interaction.user.name}")
+    
+    # Extract content from message
+    content_text, image_path, title, description, url, temp_files = await extract_message_content(message, interaction, logger)
+    
+    try:
+        # Load the AI helper
+        ai_helper = load_ai_helper_from_config(logger=logger)
+        if not ai_helper:
+            logger.error("Failed to initialize AI helper")
+            await interaction.followup.send("Failed to initialize AI helper. Check your API key configuration.", ephemeral=True)
+            return
+        
+        # Prepare the prompt
+        prompt = content_text
+        if title:
+            prompt = f"Title: {title}\n{prompt}"
+        if description:
+            prompt = f"{prompt}\nDescription: {description}"
+        if url:
+            prompt = f"{prompt}\nURL: {url}"
+        
+        if not prompt.strip() and not image_path:
+            await interaction.followup.send("There's no content to explain.", ephemeral=True)
+            return
+        
+        # Add placeholder text if the prompt is empty to prevent API errors
+        if not prompt.strip() and image_path:
+            prompt = "Please explain this image."
+            
+        logger.info(f"Final prompt prepared: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
+        
+        # Define the system prompt for xQc explanation
+        system_prompt = """
+        Simulate xQc's reaction to the provided content, embodying his distinctive speech patterns and mannerisms. This includes 
+        frequent stutters, rapid speech, self-interruptions, and the use of phrases like "okay, listen...", "dud", "chat", "yo", 
+        "literally", "actually", and "that's crazy". Ensure the response captures his stream-of-consciousness style, jumping 
+        between thoughts rapidly and using exaggerated emphasis.
 
+        If the content references memes or specific concepts, explain them in xQc's voice, maintaining his characteristic delivery. 
+        Utilize current information, as many memes may relate to recent events. Pay close attention to subtle jokes or nuances 
+        within the content.
 
+        Incorporate context about xQc's longstanding Minecraft speedrun rivalry with Forsen only if forsen or minecraft is mentioned,
+        do not mention it otherwise. Forsens fans are called "Bajs".
+        As of October 2023, Forsen holds a personal best of 15 minutes and 28 seconds, 70 seconds faster than xQc's best time.
+        This rivalry has been marked by playful banter and mutual challenges, often shared through social media and streams. 
+        For instance, after xQc's 2023 record, he tweeted at Forsen: "This is an official notice that your record has been 
+        destroyed... PS: get rolled. Nub." xQc recently started playing minecraft again and is, presumably, trying to beat Forsen's record.
+
+        xQc's fans are called "Juicers and he streams on twitch and Kick, but mostly on Kick. He does a lot of "react" content on Kick as well
+        as playing slots on stake.com.
+
+        Limit the response to less than two paragraphs. If you think you can do it in one paragraph, do it in one paragraph.
+        """
+        
+        # Generate the AI response with web search enabled
+        response = await ai_helper.generate_content(
+            prompt=prompt,
+            image_path=image_path,
+            system_prompt=system_prompt,
+            enable_web_search=True  # Enable web search for latest information
+        )
+        
+        if not response:
+            logger.error("AI response was empty or null")
+            await interaction.followup.send("I couldn't generate an explanation. Please try again later.", ephemeral=True)
+            return
+        
+        # Create and send the embed
+        embed = discord.Embed(
+            description=response,
+            color=0x2196F3  # Blue color that matches xQc's branding
+        )
+        
+        embed.set_author(
+            name="xQc", 
+            icon_url="https://pbs.twimg.com/profile_images/1702011519049904128/JXVYGukS_400x400.jpg"
+        )
+        
+        await message.reply(embed=embed)
+        await interaction.followup.send("Explanation generated successfully!", ephemeral=True)
+        
+    except Exception as e:
+        logger.exception(f"Error generating xQc explanation: {str(e)}")
+        await interaction.followup.send(f"An error occurred while generating the explanation. Please try again later.", ephemeral=True)
+    finally:
+        # Clean up all temporary files we've created
+        for temp_file in temp_files:
+            if temp_file and os.path.exists(temp_file):
+                try:
+                    logger.info(f"Cleaning up temporary file: {temp_file}")
+                    os.remove(temp_file)
+                except Exception as e:
+                    logger.error(f"Error cleaning up temporary file {temp_file}: {e}")
 
 @app_register_decorator(name="Bajs React", type=discord.AppCommandType.message)
 async def test_ai(interaction: discord.Interaction, message: discord.Message) -> None:
@@ -407,90 +631,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
         return
     
     # Initialize variables
-    content_text = message.content or ""
-    image_path = None
-    title = None
-    description = None
-    url = None
-    
-    logger.info(f"Message content: {content_text}")
-    
-    # List to track temp files for cleanup
-    temp_files = []
-    
-    # Check for image attachments
-    if message.attachments:
-        extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.ico')
-        images = [a for a in message.attachments if a.filename.lower().endswith(extensions)]
-        image_count = len(images)
-        logger.info(f"Found {len(message.attachments)} attachments, {image_count} are images")
-        
-        non_image_attachments = [a.filename for a in message.attachments if not a.filename.lower().endswith(extensions)]
-        if non_image_attachments:
-            logger.warning(f"Found attachments with unsupported extensions: {non_image_attachments}")
-        
-        # If there are multiple image attachments, just use the first one for now
-        # Future improvement: combine images or process them in sequence
-        if image_count > 1:
-            logger.info("Multiple images detected, using first image only for now")
-            await interaction.followup.send("Multiple images detected. Using only the first image for now.", ephemeral=True)
-        
-        # Process the first valid image attachment only
-        for attachment in message.attachments:
-            if attachment.filename.lower().endswith(extensions):
-                logger.info(f"Processing image attachment: {attachment.filename}")
-                try:
-                    image_path = await ai_helper.download_image(attachment.url)
-                    if image_path:
-                        logger.info(f"Successfully downloaded image: {image_path}")
-                        temp_files.append(image_path)
-                        break  # Stop after first successful download
-                    else:
-                        logger.warning(f"Failed to download image: {attachment.filename}")
-                except Exception as e:
-                    logger.error(f"Error processing attachment: {str(e)}")
-                    continue
-    
-    # Check embeds for images and metadata if no attachment was successfully processed
-    if not image_path and message.embeds:
-        logger.info(f"Found {len(message.embeds)} embeds")
-        for embed in message.embeds:
-            # Check for thumbnail or image
-            if embed.thumbnail and embed.thumbnail.url:
-                logger.info(f"Processing embed thumbnail: {embed.thumbnail.url}")
-                try:
-                    image_path = await ai_helper.download_image(embed.thumbnail.url)
-                    if image_path:
-                        temp_files.append(image_path)
-                        break
-                except Exception as e:
-                    logger.error(f"Error processing embed thumbnail: {str(e)}")
-                    continue
-            elif embed.image and embed.image.url:
-                logger.info(f"Processing embed image: {embed.image.url}")
-                try:
-                    image_path = await ai_helper.download_image(embed.image.url)
-                    if image_path:
-                        temp_files.append(image_path)
-                        break
-                except Exception as e:
-                    logger.error(f"Error processing embed image: {str(e)}")
-                    continue
-                    
-            # Get title and description
-            if embed.title:
-                title = embed.title
-                logger.info(f"Found embed title: {title}")
-            if embed.description:
-                description = embed.description
-                logger.info(f"Found embed description: {description[:100]}{'...' if len(description) > 100 else ''}")
-            
-            # Get URL from embed
-            if embed.url:
-                url = embed.url
-                logger.info(f"Found embed URL: {url}")
-    
-        logger.info(f"embed values: {embed.to_dict()}")
+    content_text, image_path, title, description, url, temp_files = await extract_message_content(message, interaction, logger)
     
     # Prepare the prompt
     prompt = content_text
@@ -498,7 +639,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
         prompt = f"Title: {title}\n{prompt}"
     if description:
         prompt = f"{prompt}\nDescription: {description}"
-    if url and title:
+    if url:
         prompt = f"{prompt}\nURL: {url}"
     
     if not prompt.strip() and not image_path:
@@ -509,10 +650,6 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     # Add placeholder text if the prompt is empty to prevent API errors
     if (url and not title and not description and image_path) or not prompt.strip():
         prompt = "Please respond to this image."
-        
-    
-        
-
         
     logger.info(f"Final prompt prepared: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
     
@@ -808,7 +945,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
         properties={
             "explanation": types.Schema(
                 type=types.Type.STRING,
-                description="A brief explanation of what was observed in the content and how the AI plans to respond"
+                description="A brief explanation of what was observed in the content and how the AI plans to respond, 200 words max"
             ),
             "chats": types.Schema(
                 type=types.Type.ARRAY,

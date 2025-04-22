@@ -96,8 +96,21 @@ class AIHelper:
                         response_schema: Optional[types.Schema] = None,
                         available_emotes: Optional[List[str]] = None,
                         safety_settings: Optional[List[Dict]] = None,
-                        include_thoughts: bool = False) -> Optional[str]:
-        """Generate content using the Gemini API asynchronously"""
+                        include_thoughts: bool = False,
+                        enable_web_search: bool = False) -> Optional[str]:
+        """Generate content using the Gemini API asynchronously
+        
+        Args:
+            prompt: The text prompt to send to the model
+            image_path: Optional path to an image file to include with the prompt
+            system_prompt: Optional system prompt to set context for the model
+            response_mime_type: Optional MIME type for the response format
+            response_schema: Optional schema to structure the response
+            available_emotes: Optional list of available emotes for chat simulations
+            safety_settings: Optional safety settings for content generation
+            include_thoughts: Whether to include model thinking in the response
+            enable_web_search: Whether to enable Google search tool for web lookups
+        """
         try:
             # Prepare debug data if debug mode is enabled
             debug_data = {
@@ -106,7 +119,8 @@ class AIHelper:
                     "system_prompt": system_prompt,
                     "image_path": image_path,
                     "response_mime_type": response_mime_type,
-                    "available_emotes": available_emotes
+                    "available_emotes": available_emotes,
+                    "enable_web_search": enable_web_search
                 }
             }
             
@@ -168,9 +182,26 @@ class AIHelper:
                 temperature=0.7,
             )
             
+            # Set up thinking config if requested
             if include_thoughts:
                 thinking = types.ThinkingConfig(include_thoughts=include_thoughts)
                 generate_content_config.thinking_config = thinking
+            
+            # Add web search tool if enabled
+            if enable_web_search:
+                self.logger.info("Enabling Google Search tool")
+                tools = [
+                    types.Tool(google_search=types.GoogleSearch()),
+                ]
+                generate_content_config.tools = tools
+                
+                # Web search works best with more recent model versions
+                if not self.model.startswith(("gemini-1.5-pro", "gemini-1.5-flash-latest", "gemini-2")):
+                    self.logger.warning(
+                        f"Web search works best with newer models. Current model: {self.model}. "
+                        "Consider using gemini-1.5-pro or newer."
+                    )
+            
             # Add response mime type if provided
             if response_mime_type:
                 self.logger.info(f"Setting response MIME type: {response_mime_type}")
