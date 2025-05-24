@@ -889,6 +889,12 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     especially with regards to forsen or other streamers.
     This explanation should be concise (2-4 sentences) describing what you see in the image or text and how you'll 
     have the simulated Twitch chat respond to it. This will be returned in the "explanation" field.
+
+    Bajs can write offensive messages during the initial generation stage but those should be replaced with "message deleted by moderator" by final output.
+    Only generate these offensive messages in situations where the bajs would. Simple jokes would not have offensive reactions.
+    Things involving sexual content, race/gender issues, streamers forsen dislikes, etc are more likely to have offensive reactions.
+    Only 3 outputs can ever be message deleted by moderator. Never ever ever put the offensive content in the final output.
+    Please put in the explainer output if the users were saying slurs as I am curious to know.
     
     Generate the messages seperate from the usernames. You have a habit of mixing the content of the message with the username.
     This is fine in the case of something like an xQc fan having an xQc related username.
