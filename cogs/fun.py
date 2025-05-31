@@ -892,9 +892,11 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
 
     Bajs can write offensive messages during the initial generation stage but those should be replaced with "message deleted by moderator" by final output.
     Only generate these offensive messages in situations where the bajs would. Simple jokes would not have offensive reactions.
+    The moderators should only delete messages that are very offensive. Lightly offensive messages should be allowed. To be clear, the moderators should only delete messages that are very offensive.
+    Light racism, sexism, etc is allowed as it is part of the culture.
     Things involving sexual content, race/gender issues, streamers forsen dislikes, etc are more likely to have offensive reactions.
     Only 3 outputs can ever be message deleted by moderator. Never ever ever put the offensive content in the final output.
-    Please put in the explainer output if the users were saying slurs as I am curious to know.
+    Please list all the messages that are message deleted by moderator in the "deleted_messages" field. The deleted_messages field can contain slurs, offensive content, or other messages that are not allowed in the chat.
     
     Generate the messages seperate from the usernames. You have a habit of mixing the content of the message with the username.
     This is fine in the case of something like an xQc fan having an xQc related username.
@@ -969,6 +971,12 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
                             type=types.Type.STRING,
                         ),
                     },
+                ),
+            ),
+            "deleted_messages": types.Schema(
+                type=types.Type.ARRAY,
+                items=types.Schema(
+                    type=types.Type.STRING,
                 ),
             ),
         },
@@ -1055,7 +1063,10 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
             
             # Format the chat messages
             formatted_chat = ""
-            for chat in chat_data.get("chats", []):
+            # Get the chats and randomize their order
+            chats = chat_data.get("chats", [])
+            random.shuffle(chats)
+            for chat in chats:
                 username = chat.get("username", "Unknown")
                 chat_message = chat.get("message", "")
                 formatted_chat += f"**{username}**: {chat_message}\n"
@@ -1084,7 +1095,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
                 logger.error("Failed to generate Twitch chat image")
                 await interaction.followup.send("Failed to generate the Twitch chat image.", ephemeral=True)
             
-            await interaction.followup.send(f"Twitch chat simulation generated successfully!\n Description: {chat_data['explanation']}", ephemeral=True)
+            await interaction.followup.send(f"Twitch chat simulation generated successfully!\n Description: {chat_data['explanation']}\n Message deleted by moderator: {', '.join(chat_data['deleted_messages'])}", ephemeral=True)
             
         except json.JSONDecodeError as e:
             # If the response isn't valid JSON, log the failure and the raw response
