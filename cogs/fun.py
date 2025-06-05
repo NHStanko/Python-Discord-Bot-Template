@@ -359,7 +359,10 @@ elon_responses = [
     "You are breaking the law",
     "I take the short bus to work 😂",
     "{user} is a major grifter and hates America",
-    "Thank you, receipt via 𝕏 acknowledged."
+    "Thank you, receipt via 𝕏 acknowledged.",
+    "Whatever.",
+    "Such ingratitude",
+    "Wise words"
 ]
 
 async def extract_message_content(message, interaction, logger):
