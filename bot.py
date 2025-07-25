@@ -155,6 +155,7 @@ logger.addHandler(debug_file_handler)
 # Attach the logger to the bot.
 bot.logger = logger
 
+#updating version
 
 async def init_db():
     async with aiosqlite.connect(
