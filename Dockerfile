@@ -10,6 +10,7 @@ RUN apt install -y python3-dev python3-pip libnacl-dev
 RUN pip install wheel
 COPY requirements.txt /app/requirements.txt
 RUN pip install -r requirements.txt
+RUN pip install "discord.py[voice] @ git+https://github.com/rapptz/discord.py"
 
 COPY . /app
 
