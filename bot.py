@@ -20,6 +20,7 @@ import aiosqlite
 import discord
 from discord.ext import commands, tasks
 from discord.ext.commands import Bot, Context
+from helpers.message_handler import process_message, register_message_handler
 
 import exceptions
 
@@ -194,6 +195,7 @@ async def on_ready() -> None:
         await bot.tree.sync()
 
 
+
 def channel_member_count(channel: discord.VoiceChannel, count_bots=False) -> int:
     return len([member for member in channel.members if not member.bot or count_bots])
 
@@ -231,13 +233,14 @@ async def status_task() -> None:
 
 @bot.event
 async def on_message(message: discord.Message) -> None:
-    """
-    The code in this event is executed every time someone sends a message, with or without the prefix
-
-    :param message: The message that was sent.
-    """
+    # Ignore bots (including self)
     if message.author == bot.user or message.author.bot:
         return
+
+    # Dispatch to registered handlers
+    await process_message(message)
+
+    # Ensure commands still work
     await bot.process_commands(message)
 
 
@@ -359,12 +362,41 @@ async def load_cogs() -> None:
                 exception = f"{type(e).__name__}: {e}"
                 bot.logger.error(f"Failed to load extension {extension}\n{exception}")
                 
-
+@register_message_handler(user_ids=[157694052337188865])
+async def idontthinkso(message: discord.Message) -> None:
+    import re
     
+    emojis = await bot.fetch_application_emojis()
+    # [<Emoji id=1399554109014675507 name='NOIDONTTHINKSO' animated=True managed=False>, <Emoji id=1399554124390858852 name='YESIDOTHINKSO' animated=True managed=False>]
+    # If the message is only one of the emojis, respond with the other one
+    # Check if the message is only a single emoji (It looks like <a:NOIDONTTHINKSO:803763692210487357>)
     
+    # Regex to match a single emoji in the message (animated or static)
+    emoji_pattern = r'^<a?:([^:]+):\d+>$'
+    match = re.match(emoji_pattern, message.content.strip())
+    
+    if match:
+        emoji_name = match.group(1).lower()  # Get emoji name in lowercase
+        
+        # Check if it's one of our target emojis
+        if emoji_name == 'noidontthinkso':
+            # Find the YESIDOTHINKSO emoji
+            target_emoji = discord.utils.get(emojis, name='YESIDOTHINKSO')
+            if target_emoji:
+                await message.channel.send(str(target_emoji))
+        elif emoji_name == 'yesidothinkso':
+            # Find the NOIDONTTHINKSO emoji
+            target_emoji = discord.utils.get(emojis, name='NOIDONTTHINKSO')
+            if target_emoji:
+                await message.channel.send(str(target_emoji))
 
 
 asyncio.run(init_db())
 asyncio.run(load_cogs())
 
+
+
 bot.run(config["token"])
+
+
+
