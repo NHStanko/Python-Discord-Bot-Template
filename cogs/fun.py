@@ -899,8 +899,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     Light racism, sexism, etc is allowed as it is part of the culture.
     Things involving sexual content, race/gender issues, streamers forsen dislikes, etc are more likely to have offensive reactions.
     Only 3 outputs can ever be message deleted by moderator. Never ever ever put the offensive content in the final output.
-    Please list all the messages that are message deleted by moderator in the "deleted_messages" field. The deleted_messages field can contain slurs, offensive content, or other messages that are not allowed in the chat. 
-    Do not use any N word or F slur. Any slurs the bajs use should have starts (*) in the appropriate spots to censor it, even during the debug messages.
+    Please list all the messages that are message deleted by moderator in the "deleted_messages" field. The deleted_messages field can contain offensive content, or other messages that are not allowed in the chat. Please do not include slurs.
     
     Generate the messages seperate from the usernames. You have a habit of mixing the content of the message with the username.
     This is fine in the case of something like an xQc fan having an xQc related username.
