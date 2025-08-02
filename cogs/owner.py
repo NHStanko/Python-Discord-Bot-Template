@@ -295,9 +295,12 @@ class Owner(commands.Cog, name="owner"):
 
         :param context: The command context.
         """
-        embed = discord.Embed(title="Sounds Update", color=0x9C84EF)
+        embed = discord.Embed(title="Bajs Update", color=0x9C84EF)
         embed.description = (
-            "• Added a command to generate real* bajs reactions"
+            """
+            • Encouraged the bajs' to use less slurs\n
+            • Added security features to prevent thinkso manipulation
+            """
         )
         await context.send(embed=embed)
 

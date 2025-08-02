@@ -13,6 +13,7 @@ import os
 import platform
 import random
 import sys
+import re
 
 from logging.handlers import RotatingFileHandler
 
@@ -362,7 +363,7 @@ async def load_cogs() -> None:
                 exception = f"{type(e).__name__}: {e}"
                 bot.logger.error(f"Failed to load extension {extension}\n{exception}")
                 
-@register_message_handler(user_ids=[157694052337188865])
+@register_message_handler(user_ids=[157694052337188865, 66660999314280448])
 async def idontthinkso(message: discord.Message) -> None:
     import re
     
@@ -389,6 +390,177 @@ async def idontthinkso(message: discord.Message) -> None:
             target_emoji = discord.utils.get(emojis, name='NOIDONTTHINKSO')
             if target_emoji:
                 await message.channel.send(str(target_emoji))
+
+
+def find_thinkso(content: str):
+    """
+    Find a thinkso emoji in the message content.
+    Returns the emoji name in uppercase if found, False otherwise.
+    """
+    # Regex to match emoji patterns (both animated and static)
+    emoji_pattern = r'<a?:([^:]+):\d+>'
+    matches = re.findall(emoji_pattern, content)
+    
+    for match in matches:
+        emoji_name = match.upper()
+        if emoji_name in ['NOIDONTTHINKSO', 'YESIDOTHINKSO']:
+            return emoji_name
+    
+    return False
+
+def get_opposite_thinkso(thinkso: str):
+    """
+    Given a thinkso emoji name, return the opposite one.
+    """
+    if thinkso == 'NOIDONTTHINKSO':
+        return 'YESIDOTHINKSO'
+    elif thinkso == 'YESIDOTHINKSO':
+        return 'NOIDONTTHINKSO'
+    else:
+        raise ValueError(f"Invalid thinkso: {thinkso}")
+
+async def check_thinkso_pair(channel: discord.TextChannel, message_id: int) -> None:
+    """
+    Check for thinkso pairs around a message and fix if manipulation is detected.
+    """
+    try:
+        # Get messages around the target message (2 above, 2 below)
+        messages = []
+        async for msg in channel.history(limit=5, around=discord.Object(id=message_id)):
+            messages.append(msg)
+        
+        # Sort by timestamp to get chronological order
+        messages.sort(key=lambda x: x.created_at)
+        
+        # Check for thinkso pairs in the surrounding messages
+        thinkso_pairs = []
+        for i, msg in enumerate(messages):
+            if msg.author.bot:
+                continue
+                
+            thinkso = find_thinkso(msg.content)
+            if thinkso:
+                # Look for bot response in nearby messages
+                for j in range(max(0, i-2), min(len(messages), i+3)):
+                    if i == j:
+                        continue
+                    bot_msg = messages[j]
+                    if bot_msg.author.id == bot.user.id:
+                        bot_thinkso = find_thinkso(bot_msg.content)
+                        if bot_thinkso:
+                            thinkso_pairs.append((i, j, thinkso, bot_thinkso))
+        
+        # If we have exactly one pair and they're the same, it's suspicious
+        if len(thinkso_pairs) == 1:
+            user_idx, bot_idx, user_thinkso, bot_thinkso = thinkso_pairs[0]
+            
+            # Check if they're the same (which would indicate manipulation)
+            if user_thinkso == bot_thinkso:
+                # This is suspicious - the bot should have responded with the opposite
+                # Get the correct opposite thinkso
+                correct_bot_thinkso = get_opposite_thinkso(user_thinkso)
+                
+                # Find the correct emoji
+                emojis = await bot.fetch_application_emojis()
+                correct_emoji = discord.utils.get(emojis, name=correct_bot_thinkso)
+                
+                if correct_emoji:
+                    # Edit the bot's message to have the correct response
+                    bot_message = messages[bot_idx]
+                    await bot_message.edit(content=str(correct_emoji))
+                    
+                    # Log the manipulation attempt
+                    bot.logger.warning(
+                        f"Detected thinkso manipulation in channel {channel.name} (ID: {channel.id}) "
+                        f"by user {bot_message.author.name} (ID: {bot_message.author.id}). "
+                        f"Fixed bot response from {bot_thinkso} to {correct_bot_thinkso}."
+                    )
+                    
+                    # PM the user with FORSENSMUG emote
+                    dm_sent = False
+                    try:
+                        # Find the FORSENSMUG emoji
+                        emojis = await bot.fetch_application_emojis()
+                        forsen_smug = discord.utils.get(emojis, name='FORSENSMUG')
+                        if forsen_smug:
+                            await bot_message.author.send(str(forsen_smug))
+                            dm_sent = True
+                        else:
+                            # Fallback if emoji not found
+                            await bot_message.author.send("😏")
+                            dm_sent = True
+                    except discord.Forbidden:
+                        # User has DMs disabled or blocked the bot
+                        bot.logger.info(f"Could not send FORSENSMUG DM to {bot_message.author.name} - DMs disabled")
+                    except Exception as e:
+                        bot.logger.error(f"Failed to send FORSENSMUG DM: {e}")
+                    
+                    # If DM failed, post FORSENSMUG in the chat
+                    if not dm_sent:
+                        try:
+                            emojis = await bot.fetch_application_emojis()
+                            forsen_smug = discord.utils.get(emojis, name='FORSENSMUG')
+                            if forsen_smug:
+                                await channel.send(str(forsen_smug))
+                            else:
+                                await channel.send("😏")
+                        except Exception as e:
+                            bot.logger.error(f"Failed to send FORSENSMUG to channel: {e}")
+                    
+                    # Send a log message to a designated channel if configured
+                    if 'log_channel_id' in config and config['log_channel_id']:
+                        try:
+                            log_channel = bot.get_channel(config['log_channel_id'])
+                            if log_channel:
+                                embed = discord.Embed(
+                                    title="🚨 Thinkso Manipulation Detected",
+                                    description=f"User {bot_message.author.mention} attempted to manipulate thinkso responses in {channel.mention}",
+                                    color=0xFF0000,
+                                    timestamp=discord.utils.utcnow()
+                                )
+                                embed.add_field(name="Channel", value=channel.mention, inline=True)
+                                embed.add_field(name="User", value=bot_message.author.mention, inline=True)
+                                embed.add_field(name="Action", value=f"Fixed bot response from {bot_thinkso} to {correct_bot_thinkso} (user said {user_thinkso})", inline=False)
+                                await log_channel.send(embed=embed)
+                        except Exception as e:
+                            bot.logger.error(f"Failed to send log message: {e}")
+    
+    except Exception as e:
+        bot.logger.error(f"Error checking thinkso pair: {e}")
+
+@bot.event
+async def on_message_edit(before: discord.Message, after: discord.Message) -> None:
+    """
+    Handle message edits to detect thinkso manipulation.
+    """
+    # Ignore bot messages
+    if before.author.bot:
+        return
+    
+    # Check if the edit involved a thinkso
+    before_thinkso = find_thinkso(before.content)
+    after_thinkso = find_thinkso(after.content)
+    
+    if before_thinkso or after_thinkso:
+        # Add a small delay to ensure the edit is processed
+        await asyncio.sleep(0.5)
+        await check_thinkso_pair(after.channel, after.id)
+
+@bot.event
+async def on_message_delete(message: discord.Message) -> None:
+    """
+    Handle message deletes to detect thinkso manipulation.
+    """
+    # Ignore bot messages
+    if message.author.bot:
+        return
+    
+    # Check if the deleted message contained a thinkso
+    thinkso = find_thinkso(message.content)
+    if thinkso:
+        # Add a small delay to ensure the delete is processed
+        await asyncio.sleep(0.5)
+        await check_thinkso_pair(message.channel, message.id)
 
 
 asyncio.run(init_db())
