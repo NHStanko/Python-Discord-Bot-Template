@@ -438,9 +438,9 @@ async def check_thinkso_pair(channel: discord.TextChannel, message_id: int, trig
     Check for thinkso pairs around a message and fix if manipulation is detected.
     """
     try:
-        # Get messages around the target message (2 above, 2 below)
+        # Get messages around the target message (4 above, 4 below)
         messages = []
-        async for msg in channel.history(limit=5, around=discord.Object(id=message_id)):
+        async for msg in channel.history(limit=9, around=discord.Object(id=message_id)):
             messages.append(msg)
         
         # Sort by timestamp to get chronological order
@@ -450,6 +450,9 @@ async def check_thinkso_pair(channel: discord.TextChannel, message_id: int, trig
         thinkso_pairs = []
         orphaned_bot_messages = []
         
+        # Track which message pairs we've already found to avoid duplicates
+        found_pairs = set()
+        
         # First pass: find user->bot pairs and orphaned bot messages
         for i, msg in enumerate(messages):
             if msg.author.bot:
@@ -458,14 +461,19 @@ async def check_thinkso_pair(channel: discord.TextChannel, message_id: int, trig
             thinkso = find_thinkso(msg.content)
             if thinkso:
                 # Look for bot response in nearby messages
-                for j in range(max(0, i-2), min(len(messages), i+3)):
+                for j in range(max(0, i-4), min(len(messages), i+5)):
                     if i == j:
                         continue
                     bot_msg = messages[j]
                     if bot_msg.author.id == bot.user.id:
                         bot_thinkso = find_thinkso(bot_msg.content)
                         if bot_thinkso:
-                            thinkso_pairs.append((i, j, thinkso, bot_thinkso))
+                            # Check if we've already found this pair
+                            pair_key = (min(i, j), max(i, j))
+                            if pair_key not in found_pairs:
+                                found_pairs.add(pair_key)
+                                thinkso_pairs.append((i, j, thinkso, bot_thinkso, False))  # False = normal order
+                            break
         
         # Second pass: find bot->user pairs (reversed order)
         for i, msg in enumerate(messages):
@@ -476,17 +484,26 @@ async def check_thinkso_pair(channel: discord.TextChannel, message_id: int, trig
             if bot_thinkso:
                 # Look for user response in nearby messages
                 found_user_pair = False
-                for j in range(max(0, i-2), min(len(messages), i+3)):
+                for j in range(max(0, i-4), min(len(messages), i+5)):
                     if i == j:
                         continue
                     user_msg = messages[j]
                     if not user_msg.author.bot:
                         user_thinkso = find_thinkso(user_msg.content)
                         if user_thinkso:
-                            # Found a bot->user pair, add it as reversed
-                            thinkso_pairs.append((j, i, user_thinkso, bot_thinkso))
-                            found_user_pair = True
-                            break
+                            # Check if we've already found this pair
+                            pair_key = (min(i, j), max(i, j))
+                            if pair_key not in found_pairs:
+                                found_pairs.add(pair_key)
+                                # Found a bot->user pair, add it as reversed
+                                # Store with a flag to indicate reversed order
+                                thinkso_pairs.append((j, i, user_thinkso, bot_thinkso, True))  # True = reversed
+                                found_user_pair = True
+                                break
+                            else:
+                                # Even though we skipped it, this bot message is part of a valid pair
+                                found_user_pair = True
+                                break
                 
                 # If no user pair found, mark as orphaned
                 if not found_user_pair:
@@ -500,12 +517,15 @@ async def check_thinkso_pair(channel: discord.TextChannel, message_id: int, trig
             except Exception as e:
                 bot.logger.error(f"Failed to delete orphaned bot message: {e}")
         
-        # If we have exactly one pair, check if it's suspicious
+        # Only fix if there's exactly one pair (ignore if there are multiple thinksos)
         if len(thinkso_pairs) == 1:
-            user_idx, bot_idx, user_thinkso, bot_thinkso = thinkso_pairs[0]
+            user_idx, bot_idx, user_thinkso, bot_thinkso, is_reversed = thinkso_pairs[0]
             user_message = messages[user_idx]
+            bot_message = messages[bot_idx]
             
             # Determine expected bot response based on user type
+            # THINKSO_OPPOSITE_USERS: User says "YESIDOTHINKSO" -> Bot should say "NOIDONTTHINKSO" (and vice versa)
+            # THINKSO_FOLLOW_USERS: User says "YESIDOTHINKSO" -> Bot should say "YESIDOTHINKSO" (same)
             if user_message.author.id in THINKSO_OPPOSITE_USERS:
                 # User should get opposite response
                 expected_bot_thinkso = get_opposite_thinkso(user_thinkso)
@@ -519,29 +539,22 @@ async def check_thinkso_pair(channel: discord.TextChannel, message_id: int, trig
                 expected_bot_thinkso = get_opposite_thinkso(user_thinkso)
                 is_suspicious = (user_thinkso == bot_thinkso)
             
+            # For reversed order, always check if the bot's response is correct
+            # This catches cases where someone creates a bot->user pair with wrong thinksos
+            if is_reversed:
+                is_suspicious = (bot_thinkso != expected_bot_thinkso)
+            
             # Check if the response is suspicious
             if is_suspicious:
-                
-                # Check if this is a reversed order (bot->user instead of user->bot)
-                # This would indicate someone deleted the user's original message
-                is_reversed_order = (bot_idx < user_idx)
                 
                 # Find the correct emoji
                 emojis = await bot.fetch_application_emojis()
                 correct_emoji = discord.utils.get(emojis, name=expected_bot_thinkso)
                 
                 if correct_emoji:
-                    if is_reversed_order:
-                        # For reversed order, delete the bot message and post a new one
-                        # This simulates the bot responding after the user
-                        bot_message = messages[bot_idx]
-                        await bot_message.delete()
-                        await channel.send(str(correct_emoji))
-                        bot.logger.warning(f"Fixed reversed thinkso order in {channel.name} - deleted bot message and reposted")
-                    else:
-                        # Normal case - edit the bot's message
-                        bot_message = messages[bot_idx]
-                        await bot_message.edit(content=str(correct_emoji))
+                    # Always edit the bot's message (never delete/repost)
+                    bot_message = messages[bot_idx]
+                    await bot_message.edit(content=str(correct_emoji))
                     
                     # Determine target user for notifications
                     target_user = trigger_user if trigger_user else user_message.author
