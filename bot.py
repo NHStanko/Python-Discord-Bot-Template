@@ -448,6 +448,9 @@ async def check_thinkso_pair(channel: discord.TextChannel, message_id: int, trig
         
         # Check for thinkso pairs in the surrounding messages
         thinkso_pairs = []
+        orphaned_bot_messages = []
+        
+        # First pass: find user->bot pairs and orphaned bot messages
         for i, msg in enumerate(messages):
             if msg.author.bot:
                 continue
@@ -463,6 +466,39 @@ async def check_thinkso_pair(channel: discord.TextChannel, message_id: int, trig
                         bot_thinkso = find_thinkso(bot_msg.content)
                         if bot_thinkso:
                             thinkso_pairs.append((i, j, thinkso, bot_thinkso))
+        
+        # Second pass: find bot->user pairs (reversed order)
+        for i, msg in enumerate(messages):
+            if not msg.author.bot or msg.author.id != bot.user.id:
+                continue
+                
+            bot_thinkso = find_thinkso(msg.content)
+            if bot_thinkso:
+                # Look for user response in nearby messages
+                found_user_pair = False
+                for j in range(max(0, i-2), min(len(messages), i+3)):
+                    if i == j:
+                        continue
+                    user_msg = messages[j]
+                    if not user_msg.author.bot:
+                        user_thinkso = find_thinkso(user_msg.content)
+                        if user_thinkso:
+                            # Found a bot->user pair, add it as reversed
+                            thinkso_pairs.append((j, i, user_thinkso, bot_thinkso))
+                            found_user_pair = True
+                            break
+                
+                # If no user pair found, mark as orphaned
+                if not found_user_pair:
+                    orphaned_bot_messages.append((i, msg))
+        
+        # Handle orphaned bot messages (delete them)
+        for idx, orphaned_msg in orphaned_bot_messages:
+            try:
+                await orphaned_msg.delete()
+                bot.logger.info(f"Deleted orphaned bot thinkso message in {channel.name}")
+            except Exception as e:
+                bot.logger.error(f"Failed to delete orphaned bot message: {e}")
         
         # If we have exactly one pair, check if it's suspicious
         if len(thinkso_pairs) == 1:
@@ -486,14 +522,26 @@ async def check_thinkso_pair(channel: discord.TextChannel, message_id: int, trig
             # Check if the response is suspicious
             if is_suspicious:
                 
+                # Check if this is a reversed order (bot->user instead of user->bot)
+                # This would indicate someone deleted the user's original message
+                is_reversed_order = (bot_idx < user_idx)
+                
                 # Find the correct emoji
                 emojis = await bot.fetch_application_emojis()
                 correct_emoji = discord.utils.get(emojis, name=expected_bot_thinkso)
                 
                 if correct_emoji:
-                    # Edit the bot's message to have the correct response
-                    bot_message = messages[bot_idx]
-                    await bot_message.edit(content=str(correct_emoji))
+                    if is_reversed_order:
+                        # For reversed order, delete the bot message and post a new one
+                        # This simulates the bot responding after the user
+                        bot_message = messages[bot_idx]
+                        await bot_message.delete()
+                        await channel.send(str(correct_emoji))
+                        bot.logger.warning(f"Fixed reversed thinkso order in {channel.name} - deleted bot message and reposted")
+                    else:
+                        # Normal case - edit the bot's message
+                        bot_message = messages[bot_idx]
+                        await bot_message.edit(content=str(correct_emoji))
                     
                     # Determine target user for notifications
                     target_user = trigger_user if trigger_user else user_message.author
