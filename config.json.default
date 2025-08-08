@@ -9,5 +9,9 @@
   ],
   "gambling": true,
   "gemini_api_key": "",
-  "gemini_model": ""
+  "gemini_model": "",
+  "reddit_api_enabled": false,
+  "reddit_client_id": "",
+  "reddit_client_secret": "",
+  "reddit_user_agent": ""
 }

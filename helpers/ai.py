@@ -5,15 +5,19 @@ import logging
 import aiohttp
 import asyncio
 import shutil
+import re
 from datetime import datetime
 from pathlib import Path
 from google import genai
 from google.genai import types
 from typing import List, Dict, Any, Optional, Union
 
+
+
 class AIHelper:
-    def __init__(self, api_key: str, model: str = "gemini-1.5-flash-002", logger=None, debug_mode: bool = False):
+    def __init__(self, bot, api_key: str, model: str = "gemini-1.5-flash-002", logger=None, debug_mode: bool = False):
         """Initialize the AI helper with API key and model"""
+        self.bot = bot
         self.api_key = api_key
         self.model = model
         self.client = genai.Client(api_key=api_key)
@@ -267,7 +271,7 @@ class AIHelper:
             return None
 
 # Helper function to load the AI helper from config
-def load_ai_helper_from_config(config_path: str = "config/config.json", logger=None) -> Optional[AIHelper]:
+def load_ai_helper_from_config(bot, config_path: str = "config/config.json", logger=None) -> Optional[AIHelper]:
     """Load AI helper from config file"""
     try:
         if logger:
@@ -290,7 +294,7 @@ def load_ai_helper_from_config(config_path: str = "config/config.json", logger=N
         if logger:
             logger.info(f"AI helper initialized with model: {model}, debug mode: {debug_mode}")
         
-        return AIHelper(api_key=api_key, model=model, logger=logger, debug_mode=debug_mode)
+        return AIHelper(bot=bot, api_key=api_key, model=model, logger=logger, debug_mode=debug_mode)
     except Exception as e:
         if logger:
             logger.error(f"Error loading AI helper from config: {e}")

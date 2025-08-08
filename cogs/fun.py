@@ -365,7 +365,7 @@ elon_responses = [
     "Wise words"
 ]
 
-async def extract_message_content(message, interaction, logger):
+async def extract_message_content(message, interaction, logger, bot):
     """
     Extract content from a message for AI processing.
     
@@ -373,6 +373,7 @@ async def extract_message_content(message, interaction, logger):
     - message: The Discord message to extract content from
     - interaction: The interaction that triggered this command
     - logger: Logger instance for logging
+    - bot: The bot instance
     
     Returns:
     - Tuple of (content_text, image_path, title, description, url, temp_files)
@@ -384,10 +385,46 @@ async def extract_message_content(message, interaction, logger):
     description = None
     url = None
     
-    logger.info(f"Message content: {content_text}")
-    
     # List to track temp files for cleanup
     temp_files = []
+    
+    logger.info(f"Message content: {content_text}")
+    
+    # Check for reddit urls in the message content
+    reddit_match = re.search(r"https?://(?:www\.)?reddit\.com/r/\w+/(?:comments|s)/\w+", content_text)
+    logger.info(f"Reddit URL check - content: '{content_text}'")
+    logger.info(f"Reddit URL check - match: {reddit_match}")
+    if reddit_match:
+        reddit_url = reddit_match.group(0)
+        logger.info(f"Found Reddit URL in message content: {reddit_url}")
+        
+        # Try to get Reddit post content via API
+        try:
+            from helpers.reddit import get_reddit_post
+            reddit_post = await get_reddit_post(reddit_url, bot)
+            if reddit_post:
+                reddit_content, reddit_image_url = reddit_post
+                if reddit_content:
+                    content_text = reddit_content
+                    logger.info(f"Updated content with Reddit post content")
+                if reddit_image_url and not image_path:
+                    # Load AI helper to use its download_image function
+                    ai_helper = load_ai_helper_from_config(bot, logger=logger)
+                    if ai_helper:
+                        image_path = await ai_helper.download_image(reddit_image_url)
+                        if image_path:
+                            logger.info(f"Successfully downloaded Reddit image: {image_path}")
+                            temp_files.append(image_path)
+            else:
+                logger.info("Reddit API not available or failed to get post content")
+        except Exception as e:
+            logger.error(f"Error processing Reddit URL: {str(e)}")
+        
+        # If we have a Reddit URL but no processed content, create a better prompt
+        if content_text == reddit_url:
+            logger.info("Reddit URL detected but no content extracted, creating enhanced prompt")
+
+    
     
     # Check for image attachments
     if message.attachments:
@@ -411,7 +448,7 @@ async def extract_message_content(message, interaction, logger):
                 logger.info(f"Processing image attachment: {attachment.filename}")
                 try:
                     # Load AI helper to use its download_image function
-                    ai_helper = load_ai_helper_from_config(logger=logger)
+                    ai_helper = load_ai_helper_from_config(bot, logger=logger)
                     if not ai_helper:
                         logger.error("Failed to initialize AI helper")
                         return content_text, None, title, description, url, temp_files
@@ -436,7 +473,7 @@ async def extract_message_content(message, interaction, logger):
                 logger.info(f"Processing embed thumbnail: {embed.thumbnail.url}")
                 try:
                     # Load AI helper to use its download_image function
-                    ai_helper = load_ai_helper_from_config(logger=logger)
+                    ai_helper = load_ai_helper_from_config(bot, logger=logger)
                     if not ai_helper:
                         logger.error("Failed to initialize AI helper")
                         return content_text, None, title, description, url, temp_files
@@ -452,7 +489,7 @@ async def extract_message_content(message, interaction, logger):
                 logger.info(f"Processing embed image: {embed.image.url}")
                 try:
                     # Load AI helper to use its download_image function
-                    ai_helper = load_ai_helper_from_config(logger=logger)
+                    ai_helper = load_ai_helper_from_config(bot, logger=logger)
                     if not ai_helper:
                         logger.error("Failed to initialize AI helper")
                         return content_text, None, title, description, url, temp_files
@@ -517,11 +554,11 @@ async def xqc_explains(interaction: discord.Interaction, message: discord.Messag
     logger.info(f"Processing xQc Explains request for message ID: {message.id} from user: {interaction.user.name}")
     
     # Extract content from message
-    content_text, image_path, title, description, url, temp_files = await extract_message_content(message, interaction, logger)
+    content_text, image_path, title, description, url, temp_files = await extract_message_content(message, interaction, logger, interaction.client)
     
     try:
         # Load the AI helper
-        ai_helper = load_ai_helper_from_config(logger=logger)
+        ai_helper = load_ai_helper_from_config(interaction.client, logger=logger)
         if not ai_helper:
             logger.error("Failed to initialize AI helper")
             await interaction.followup.send("Failed to initialize AI helper. Check your API key configuration.", ephemeral=True)
@@ -629,14 +666,14 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     logger.info(f"Processing TwitchChat AI request for message ID: {message.id} from user: {interaction.user.name}")
     
     # Load the AI helper
-    ai_helper = load_ai_helper_from_config(logger=logger)
+    ai_helper = load_ai_helper_from_config(interaction.client, logger=logger)
     if not ai_helper:
         logger.error("Failed to initialize AI helper")
         await interaction.followup.send("Failed to initialize AI helper. Check your API key configuration.", ephemeral=True)
         return
     
     # Initialize variables
-    content_text, image_path, title, description, url, temp_files = await extract_message_content(message, interaction, logger)
+    content_text, image_path, title, description, url, temp_files = await extract_message_content(message, interaction, logger, interaction.client)
     
     # Prepare the prompt
     prompt = content_text

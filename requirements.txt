@@ -7,3 +7,4 @@ yt-dlp
 google-genai
 pillow
 beautifulsoup4
+asyncpraw
