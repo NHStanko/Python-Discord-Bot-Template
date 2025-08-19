@@ -34,4 +34,4 @@ It would be more than welcome to keep your contributions as a single commit rath
 Start contributing by first [opening a new issue](https://github.com/kkrypt0nn/Python-Discord-Bot-Template/issues/new/choose). Once that is done, you can create a pull request for the issue.
 
 ## License
-Your submissions are understood to be under the same [Apache License 2.0](https://github.com/kkrypt0nn/Python-Discord-Bot-Template/blob/main/LICENSE.md) that covers the project.
+Your submissions are understood to be under the same [Apache License 2.0](LICENSE.md) that covers the project.
