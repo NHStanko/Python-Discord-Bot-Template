@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from google import genai
 from google.genai import types
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Tuple
 
 
 
@@ -104,8 +104,8 @@ class AIHelper:
             self.logger.error(f"Error uploading file: {e}")
             return None
     
-    async def generate_content(self, 
-                        prompt: str, 
+    async def generate_content(self,
+                        prompt: str,
                         image_path: Optional[str] = None,
                         system_prompt: Optional[str] = None,
                         response_mime_type: Optional[str] = None,
@@ -113,9 +113,9 @@ class AIHelper:
                         available_emotes: Optional[List[str]] = None,
                         safety_settings: Optional[List[Dict]] = None,
                         include_thoughts: bool = False,
-                        enable_web_search: bool = False) -> Optional[str]:
-        """Generate content using the Gemini API asynchronously
-        
+                        enable_web_search: bool = False) -> Tuple[Optional[str], Optional[str]]:
+        """Generate content using the Gemini API asynchronously.
+
         Args:
             prompt: The text prompt to send to the model
             image_path: Optional path to an image file to include with the prompt
@@ -126,6 +126,9 @@ class AIHelper:
             safety_settings: Optional safety settings for content generation
             include_thoughts: Whether to include model thinking in the response
             enable_web_search: Whether to enable Google search tool for web lookups
+
+        Returns:
+            Tuple of (response_text, error_message). Only one will be non-None.
         """
         try:
             # Prepare debug data if debug mode is enabled
@@ -253,22 +256,51 @@ class AIHelper:
             
             self.logger.info(f"Received response from Gemini API")
             
+            response_text = getattr(response, "text", "")
+
+            # Handle blank responses from the API
+            if not response_text or not response_text.strip():
+                message = (
+                    "The Gemini API returned an empty response. This might happen if the free tier limit "
+                    "was reached or the service had trouble generating a reply."
+                )
+                self.logger.error(message)
+                if self.debug_mode:
+                    debug_data["error"] = message
+                    await self._save_debug_info(debug_data)
+                return None, message
+
             # Save debug information if debug mode is enabled
             if self.debug_mode:
                 debug_data["output"] = {
-                    "text": response.text,
+                    "text": response_text,
                     "model": self.model,
                     "response_dict": response.to_json_dict()
                 }
                 await self._save_debug_info(debug_data)
-            
-            return response.text
+
+            return response_text, None
         except Exception as e:
-            self.logger.error(f"Error generating content: {e}")
+            message = str(e)
+            self.logger.error(f"Error generating content: {message}")
+
+            user_message = "Gemini API error."
+            lowered = message.lower()
+            if "quota" in lowered or "rate limit" in lowered or "429" in lowered:
+                user_message = (
+                    "Gemini free API usage limit or rate limit reached. Please try again later."
+                )
+            elif not message.strip():
+                user_message = "Gemini API returned a blank error. Please try again."
+            else:
+                # Keep the message short for the user
+                user_message = f"Gemini error: {message.splitlines()[0]}"
+
             if self.debug_mode:
-                debug_data["error"] = str(e)
+                debug_data["error"] = message
                 await self._save_debug_info(debug_data)
-            return None
+
+            return None, user_message
 
 # Helper function to load the AI helper from config
 def load_ai_helper_from_config(bot, config_path: str = "config/config.json", logger=None) -> Optional[AIHelper]:
