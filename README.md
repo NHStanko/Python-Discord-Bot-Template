@@ -1,6 +1,6 @@
 # Python Discord Bot
 
-This project is based off of https://github.com/kkrypt0nn/Python-Discord-Bot-Template.
+This project is based off of the [kkrypt0nn/Python-Discord-Bot-Template](https://github.com/kkrypt0nn/Python-Discord-Bot-Template).
 
 It has additional commands being added to it, notably voice functionality.
 
@@ -66,3 +66,7 @@ python bot.py
 ## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE.md](LICENSE.md) file for details
+
+## Attribution
+
+The original template was created by [kkrypt0nn](https://github.com/kkrypt0nn) and is available at [kkrypt0nn/Python-Discord-Bot-Template](https://github.com/kkrypt0nn/Python-Discord-Bot-Template).
