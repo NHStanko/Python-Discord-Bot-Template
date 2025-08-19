@@ -206,13 +206,15 @@ async def get_plays(user_id: int, song: str) -> int:
         async with aiosqlite.connect(DATABASE_PATH) as db:
             rows = await db.execute(
                 "SELECT SUM(times_played) FROM plays WHERE song_id=?",
-                (   
+                (
                     song,
                 ),
             )
             async with rows as cursor:
                 result = await cursor.fetchone()
-                return result[0] if result[0] is not None else 0
+                if result is None or result[0] is None:
+                    return 0
+                return result[0]
     else:
         async with aiosqlite.connect(DATABASE_PATH) as db:
             rows = await db.execute(
@@ -224,7 +226,9 @@ async def get_plays(user_id: int, song: str) -> int:
             )
             async with rows as cursor:
                 result = await cursor.fetchone()
-                return result[0] if result[0] is not None else 0
+                if result is None or result[0] is None:
+                    return 0
+                return result[0]
             
 # List the top 10 songs played by all or a specific user
 async def get_leaderboard(user_id: int ) -> list:
