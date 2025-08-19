@@ -610,18 +610,18 @@ async def xqc_explains(interaction: discord.Interaction, message: discord.Messag
         """
         
         # Generate the AI response with web search enabled
-        response = await ai_helper.generate_content(
+        response, error = await ai_helper.generate_content(
             prompt=prompt,
             image_path=image_path,
             system_prompt=system_prompt,
             enable_web_search=True  # Enable web search for latest information
         )
-        
-        if not response:
-            logger.error("AI response was empty or null")
-            await interaction.followup.send("Someone tell Nick there is a problem with the AI", ephemeral=True)
+
+        if error or not response:
+            logger.error(error or "AI response was empty or null")
+            await interaction.followup.send(error or "Someone tell Nick there is a problem with the AI", ephemeral=True)
             return
-        
+
         # Create and send the embed
         embed = discord.Embed(
             description=response,
@@ -1056,7 +1056,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
         
         # Generate AI response fully asynchronously
         logger.info("Generating AI response with emote awareness asynchronously...")
-        response = await ai_helper.generate_content(
+        response, error = await ai_helper.generate_content(
             prompt=prompt,
             image_path=image_path,
             system_prompt=system_prompt,
@@ -1064,10 +1064,10 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
             response_schema=response_schema,
             available_emotes=available_emotes,
         )
-        
-        if not response:
-            logger.error("AI response was empty or null")
-            await interaction.followup.send("Tell Nick there is a problem with the AI", ephemeral=True)
+
+        if error or not response:
+            logger.error(error or "AI response was empty or null")
+            await interaction.followup.send(error or "Tell Nick there is a problem with the AI", ephemeral=True)
             return
         
         # Parse the JSON response
