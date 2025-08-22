@@ -503,20 +503,86 @@ async def extract_message_content(message, interaction, logger, bot):
                     continue
                     
             # Get title and description
-            if embed.title:
+            if embed.title and not title:
                 title = embed.title
                 logger.info(f"Found embed title: {title}")
-            if embed.description:
+            if embed.description and not description:
                 description = embed.description
                 logger.info(f"Found embed description: {description[:100]}{'...' if len(description) > 100 else ''}")
             
             # Get URL from embed
-            if embed.url:
+            if embed.url and not url:
                 url = embed.url
                 logger.info(f"Found embed URL: {url}")
     
-        if embed and hasattr(embed, 'to_dict'):
-            logger.info(f"embed values: {embed.to_dict()}")
+        # Log raw embed dict for debugging
+        try:
+            for e in message.embeds:
+                if hasattr(e, 'to_dict'):
+                    logger.debug(f"embed values: {e.to_dict()}")
+        except Exception:
+            pass
+
+    # Some embeds unfurl asynchronously. If we have a URL or image but no
+    # title/description yet, try refetching the message a few times to let
+    # Discord populate the rich embed.
+    try:
+        has_any_url = url is not None or bool(re.search(r"https?://\S+", content_text))
+        needs_metadata = (title is None) and (description is None)
+        if needs_metadata and (message.embeds or has_any_url):
+            logger.info("Embed metadata missing; attempting to refetch updated embeds")
+            for attempt in range(3):
+                await asyncio.sleep(0.8)
+                try:
+                    refreshed = await message.channel.fetch_message(message.id)
+                except Exception as e:
+                    logger.debug(f"Failed to refetch message on attempt {attempt+1}: {e}")
+                    continue
+
+                if not refreshed.embeds:
+                    continue
+
+                # Re-scan embeds for metadata and images
+                for e in refreshed.embeds:
+                    if (not title) and e.title:
+                        title = e.title
+                        logger.info(f"Found embed title after refetch: {title}")
+                    if (not description) and e.description:
+                        description = e.description
+                        logger.info(
+                            f"Found embed description after refetch: {description[:100]}{'...' if len(description) > 100 else ''}"
+                        )
+                    if (not url) and e.url:
+                        url = e.url
+                        logger.info(f"Found embed URL after refetch: {url}")
+
+                    # If we still don't have an image_path, try to fetch from the embed
+                    if (not image_path) and e.thumbnail and e.thumbnail.url:
+                        try:
+                            ai_helper = load_ai_helper_from_config(bot, logger=logger)
+                            if ai_helper:
+                                image_path = await ai_helper.download_image(e.thumbnail.url)
+                                if image_path:
+                                    temp_files.append(image_path)
+                                    logger.info("Downloaded embed thumbnail after refetch")
+                        except Exception as ie:
+                            logger.debug(f"Error downloading thumbnail after refetch: {ie}")
+                    if (not image_path) and e.image and e.image.url:
+                        try:
+                            ai_helper = load_ai_helper_from_config(bot, logger=logger)
+                            if ai_helper:
+                                image_path = await ai_helper.download_image(e.image.url)
+                                if image_path:
+                                    temp_files.append(image_path)
+                                    logger.info("Downloaded embed image after refetch")
+                        except Exception as ie:
+                            logger.debug(f"Error downloading image after refetch: {ie}")
+
+                # Break early if we collected any metadata now
+                if title or description:
+                    break
+    except Exception as e:
+        logger.debug(f"Embed refetch logic encountered an error: {e}")
             
     return content_text, image_path, title, description, url, temp_files
     
