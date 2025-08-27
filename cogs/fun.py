@@ -341,7 +341,6 @@ elon_responses = [
     "At risk of starting the obvious, there are many attention-seeking trolls on all social media platforms trying to yank your chain. They win if you respond.",
     "Incredibly foolish and wrong statement.",
     "Every silver lining has a cloud (sigh)",
-    "Where your donation to Wikipedia goes",
     "You can just say things",
     "Never heard of {user}, but I certainly agree with them",
     "This will be fixed shortly",
