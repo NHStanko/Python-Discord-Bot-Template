@@ -1130,7 +1130,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     {"You have an xQc fan, also known as a juicer, in the chat." if random.random() < 0.25 else ""}
     {"Some user will just spam ?????? when they don't know what is going on." if random.random() < 0.50 else ""}
     {"You can have a user that is a stan for a specific streamer, they will only use that one specific streamer's emotes." if random.random() < 0.25 else ""}
-    {"You should have one user with the username flickerfireheart, they are a baj and juicer" if random.random() < 0.25 else ""}
+    {"You should have one user with the username flickerfireheart, they are a baj and juicer. They should not say offensive things." if random.random() < 0.25 else ""}
     
     9/10 of the messages should have some sort of emote in them. At least 3/4 of the messages should have non-emote text.
     They should prefer to use forsen's emotes, but can use other emotes. 
