@@ -2,6 +2,7 @@ import os
 import re
 import hashlib
 import tempfile
+import random
 from PIL import Image, ImageDraw, ImageFont
 
 def get_rainbow_color(username):
@@ -212,7 +213,7 @@ def create_twitch_chat_image(
             display_message = display_message.strip()
             if not display_message:
                 display_message = "message deleted by moderator"
-            timeout_suffix_text = "-Timed out (600s)"
+            timeout_suffix_text = "-Permanently Banned" if random.random() < 0.01 else "-Timed out (600s)"
 
         line_tokens = []
         badge_path = chat.get("subscriber_badge")

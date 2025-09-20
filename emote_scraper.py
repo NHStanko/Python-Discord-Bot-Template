@@ -433,6 +433,76 @@ def process_manual_ffz_emotes(folder):
     print(f"Downloaded {len(mapping)} manual FFZ emotes")
     return mapping
 
+def process_manual_seventv_emotes(folder):
+    """
+    Processes manually specified 7TV emote URLs and downloads them.
+    Returns a mapping {emote_name: relative_filepath}.
+    """
+    print(f"Processing {len(MANUAL_7TV_EMOTES)} manual 7TV emotes")
+    mapping = {}
+    
+    seventv_folder = os.path.join(folder, "7tv")
+    if not os.path.exists(seventv_folder):
+        os.makedirs(seventv_folder)
+    
+    for emote_url in MANUAL_7TV_EMOTES:
+        # Extract emote ID from the URL
+        emote_id_match = re.search(r'/emotes/([A-Za-z0-9]+)', emote_url)
+        if not emote_id_match:
+            print(f"Could not parse 7TV emote ID from URL: {emote_url}")
+            continue
+        
+        emote_id = emote_id_match.group(1)
+        emote_name = None
+        files = []
+        
+        # Fetch emote metadata to get the name and file formats
+        api_url = f"{SEVENTV_BASE_API}/emotes/{emote_id}"
+        try:
+            response = requests.get(api_url, timeout=2)
+            if response.status_code != 200:
+                print(f"Failed to fetch 7TV emote data: {response.status_code} for {emote_url}")
+                continue
+            data = response.json()
+            emote_name = data.get('name')
+            host = data.get('host', {}) if isinstance(data, dict) else {}
+            if not host and isinstance(data, dict):
+                host = data.get('data', {}).get('host', {})
+            files = host.get('files', [])
+        except Exception as e:
+            print(f"Error fetching 7TV emote data: {e}")
+            continue
+        
+        if not emote_name or not valid_emote_name(emote_name):
+            print(f"Skipping manual 7TV emote '{emote_name}' (invalid or missing name)")
+            continue
+        
+        # Determine if animated based on available files (match existing detection logic)
+        is_animated = any(f.get('format') == 'WEBP' or f.get('format') == 'GIF' for f in files)
+        primary_ext = "gif" if is_animated else "png"
+        secondary_ext = "png" if is_animated else "gif"
+        
+        # Try primary extension first
+        primary_url = f"https://cdn.7tv.app/emote/{emote_id}/4x.{primary_ext}"
+        primary_filepath = os.path.join(seventv_folder, f"{emote_name}.{primary_ext}")
+        primary_rel_filepath = os.path.join(os.path.basename(folder), "7tv", f"{emote_name}.{primary_ext}")
+        
+        if save_emote_image(primary_url, primary_filepath, emote_name):
+            mapping[emote_name] = primary_rel_filepath
+            continue
+        
+        # Fallback to secondary extension
+        print(f"Failed to download {primary_ext} version for {emote_name}, trying {secondary_ext} instead")
+        secondary_url = f"https://cdn.7tv.app/emote/{emote_id}/4x.{secondary_ext}"
+        secondary_filepath = os.path.join(seventv_folder, f"{emote_name}.{secondary_ext}")
+        secondary_rel_filepath = os.path.join(os.path.basename(folder), "7tv", f"{emote_name}.{secondary_ext}")
+        
+        if save_emote_image(secondary_url, secondary_filepath, emote_name):
+            mapping[emote_name] = secondary_rel_filepath
+    
+    print(f"Downloaded {len(mapping)} manual 7TV emotes")
+    return mapping
+
 def update_json(emotes_data, json_path="emotes/emotes.json"):
     """
     Updates the emotes.json file with the given emotes data.
@@ -520,6 +590,21 @@ def main():
                 emotes_data["global"]["ffz"] = {}
             # Merge with any existing FFZ emotes
             emotes_data["global"]["ffz"].update(manual_ffz_emotes)
+
+    manual_7tv_emotes = process_manual_seventv_emotes(folder)
+    if manual_7tv_emotes:
+        if args.subscriber:
+            if not channel_id in emotes_data["subscriber_emotes"]:
+                emotes_data["subscriber_emotes"][channel_id] = {}
+            if "7tv" not in emotes_data["subscriber_emotes"][channel_id]:
+                emotes_data["subscriber_emotes"][channel_id]["7tv"] = {}
+            # Merge with any existing 7TV emotes
+            emotes_data["subscriber_emotes"][channel_id]["7tv"].update(manual_7tv_emotes)
+        else:
+            if "7tv" not in emotes_data["global"]:
+                emotes_data["global"]["7tv"] = {}
+            # Merge with any existing 7TV emotes
+            emotes_data["global"]["7tv"].update(manual_7tv_emotes)
 
     # Skip automated scraping if manual_only flag is set
     if not args.manual_only:
