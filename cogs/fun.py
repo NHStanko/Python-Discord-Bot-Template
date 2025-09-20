@@ -1121,6 +1121,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     Usernames should be unrelated to the message content or the content of the prompt.
     They can only be generic twitch usernames or forsen related usernames.
     Deleted messages still come from regular viewers, so even if a message is removed by a moderator, do not name the user anything that sounds like a moderator, automod, or bot.
+    Do not use placeholder-style usernames (like DeletedMessageUser); give deleted messages the same kind of natural usernames that regular messages have.
     Even if the chat mentions timeouts or bans, the usernames for those messages should look like regular viewers and must not reference being banned, timed out, or moderated.
     I have seen some users that have names like AwarenessBaj and then they use the awareness emote, do not make up usernames like this.
     
