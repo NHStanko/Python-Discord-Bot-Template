@@ -204,6 +204,9 @@ def channel_member_count(channel: discord.VoiceChannel, count_bots=False) -> int
 
 @bot.event
 async def on_voice_state_update(member, before, after) -> None:
+    # Abort immediately if voice functionality is disabled.
+    if not globals().get("ENABLE_VOICE_COG", False):
+        return
     if member.bot:
         return
     # If bot is already in a voice channel on that guild
