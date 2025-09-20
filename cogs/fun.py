@@ -441,7 +441,6 @@ elon_responses = [
     "At risk of starting the obvious, there are many attention-seeking trolls on all social media platforms trying to yank your chain. They win if you respond.",
     "Incredibly foolish and wrong statement.",
     "Every silver lining has a cloud (sigh)",
-    "Where your donation to Wikipedia goes",
     "You can just say things",
     "Never heard of {user}, but I certainly agree with them",
     "This will be fixed shortly",
@@ -1097,12 +1096,18 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     have the simulated Twitch chat respond to it. This will be returned in the "explanation" field.
 
     Bajs can write offensive messages during the initial generation stage but those should be replaced with "message deleted by moderator" by final output.
-    Only generate these offensive messages in situations where the bajs would. Simple jokes would not have offensive reactions.
+    Before replacing them, decide how many messages should be removed. Choose an integer between 0 and 3 based on how provocative the content is:
+        • Mundane or wholesome topics (e.g. coffee posts) should usually result in 0 deleted messages.
+        • Mildly edgy or controversial topics should lead to around 1 deleted message.
+        • Clearly offensive or inflammatory content may warrant 2 deleted messages.
+        • Reserve 3 deleted messages for extremely offensive scenarios.
+    Bias this choice toward the lower numbers so that 3 deletions are rare and there is a gradual ramp from 0 to 3.
+    Only generate offensive messages in situations where the bajs would. Simple jokes should not have offensive reactions.
     The moderators should only delete messages that are very offensive. Lightly offensive messages should be allowed. To be clear, the moderators should only delete messages that are very offensive.
     Light racism, sexism, etc is allowed as it is part of the culture.
     Things involving sexual content, race/gender issues, streamers forsen dislikes, etc are more likely to have offensive reactions.
-    Only 3 outputs can ever be message deleted by moderator. Never ever ever put the offensive content in the final output.
-    Please list all the messages that are message deleted by moderator in the "deleted_messages" field. The deleted_messages field can contain offensive content, or other messages that are not allowed in the chat. Please do not include slurs.
+    Never ever ever put the offensive content in the final output, but ensure the final output contains exactly the chosen number of "message deleted by moderator" entries (up to 3).
+    Please list all the messages that are "message deleted by moderator" in the "deleted_messages" field. The deleted_messages field can contain offensive content, or other messages that are not allowed in the chat. Please do not include slurs.
     
     Generate the messages seperate from the usernames. You have a habit of mixing the content of the message with the username.
     This is fine in the case of something like an xQc fan having an xQc related username.
