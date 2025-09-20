@@ -37,7 +37,8 @@ MANUAL_FFZ_EMOTES = [
 # Manual 7TV emotes
 MANUAL_7TV_EMOTES = [
     "https://7tv.app/emotes/6446d232649f94e97473d7e3",
-    "https://7tv.app/emotes/01F7H836GR000EMPHK5YSK0K1F"
+    "https://7tv.app/emotes/01F7H836GR000EMPHK5YSK0K1F",
+    "https://7tv.app/emotes/60bd0ebfea5a332fb3304c2f"
 ]
 
 # Manual BTTV emotes

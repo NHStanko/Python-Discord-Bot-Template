@@ -14,4 +14,4 @@ RUN pip install "discord.py[voice] @ git+https://github.com/rapptz/discord.py"
 
 COPY . /app
 
-CMD ["python", "bot.py"]
+CMD ["python", "bot.py", "--voice"]

@@ -12,7 +12,8 @@ import tempfile
 import json
 import re
 import asyncio
-import random
+import math
+from pathlib import Path
 
 import aiohttp
 import discord
@@ -36,6 +37,105 @@ def app_register_decorator(name, type):
         }
         return func
     return wrapper
+
+
+LOYALTY_BADGE_DIR = Path("emotes/22484632/loyalty")
+
+
+def load_loyalty_badges(base_path: Path = LOYALTY_BADGE_DIR):
+    badges_by_tier = {1: [], 2: [], 3: []}
+    if not base_path.exists():
+        return badges_by_tier
+
+    try:
+        for entry in sorted(base_path.iterdir()):
+            if entry.suffix.lower() != ".png":
+                continue
+            try:
+                badge_id = int(entry.stem)
+            except ValueError:
+                continue
+
+            if badge_id >= 3000:
+                tier = 3
+            elif badge_id >= 2000:
+                tier = 2
+            else:
+                tier = 1
+
+            months = badge_id % 100
+            badges_by_tier[tier].append(
+                {
+                    "path": str(entry),
+                    "months": months,
+                    "tier": tier,
+                }
+            )
+    except OSError:
+        return badges_by_tier
+
+    for tier in badges_by_tier:
+        badges_by_tier[tier].sort(key=lambda item: item["months"])
+
+    return badges_by_tier
+
+
+def weighted_choice(choices, weights):
+    total = sum(weights)
+    if total <= 0:
+        return None
+
+    pick = random.random() * total
+    cumulative = 0.0
+    for choice, weight in zip(choices, weights):
+        cumulative += weight
+        if pick <= cumulative:
+            return choice
+    return choices[-1]
+
+
+def pick_badge_for_viewer(badge_pool):
+    tier_weights = [(1, 16), (2, 4), (3, 1)]
+    available = [(tier, weight) for tier, weight in tier_weights if badge_pool.get(tier)]
+    if not available:
+        return None
+
+    tiers, weights = zip(*available)
+    tier_choice = weighted_choice(tiers, weights)
+    if tier_choice is None:
+        return None
+
+    entries = badge_pool[tier_choice]
+    if not entries:
+        return None
+    if len(entries) == 1:
+        return entries[0]
+
+    decay = 0.65
+    exp_weights = [math.pow(decay, idx) for idx, _ in enumerate(entries)]
+    selection = weighted_choice(entries, exp_weights)
+    return selection or entries[0]
+
+
+def apply_subscriber_badges(chats, badge_pool):
+    if not chats or not any(badge_pool.values()):
+        return 0
+
+    applied = 0
+    for chat in chats:
+        if random.random() >= (1 / 3):
+            continue
+
+        badge = pick_badge_for_viewer(badge_pool)
+        if not badge:
+            break
+
+        chat["subscriber_badge"] = badge["path"]
+        chat["subscriber_tier"] = badge["tier"]
+        chat["subscriber_months"] = badge["months"]
+        applied += 1
+
+    return applied
 
 
 class Choice(discord.ui.View):
@@ -1015,6 +1115,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     Only some of the usernames should be related to forsen related content, the rest should be unrelated random usernames you would expect to see on twitch chat.
     Usernames should be unrelated to the message content or the content of the prompt.
     They can only be generic twitch usernames or forsen related usernames.
+    Deleted messages still come from regular viewers, so even if a message is removed by a moderator, do not name the user anything that sounds like a moderator, automod, or bot.
     I have seen some users that have names like AwarenessBaj and then they use the awareness emote, do not make up usernames like this.
     
     If there is a "baj" or a forsen fan in the content they see, someone should respond with "I C BAJS".
@@ -1171,6 +1272,20 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
             formatted_chat = ""
             # Get the chats and randomize their order
             chats = chat_data.get("chats", [])
+
+            # Attach original deleted message content so we can render it later
+            deleted_queue = list(chat_data.get("deleted_messages") or [])
+            for chat in chats:
+                message_text = chat.get("message", "")
+                if deleted_queue and "message deleted" in message_text.lower():
+                    chat["deleted_original"] = deleted_queue.pop(0)
+
+            # Assign subscriber badges to roughly half of the chatters
+            badge_pool = load_loyalty_badges()
+            assigned_badges = apply_subscriber_badges(chats, badge_pool)
+            if assigned_badges:
+                logger.info(f"Assigned subscriber badges to {assigned_badges} chatters")
+
             random.shuffle(chats)
             for chat in chats:
                 username = chat.get("username", "Unknown")

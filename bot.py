@@ -6,6 +6,7 @@ Description:
 Version: 5.5.0
 """
 
+import argparse
 import asyncio
 import json
 import logging
@@ -353,9 +354,13 @@ async def load_cogs() -> None:
     """
     The code in this function is executed whenever the bot will start.
     """
+    voice_enabled = globals().get("ENABLE_VOICE_COG", False)
     for file in os.listdir(f"{os.path.realpath(os.path.dirname(__file__))}/cogs"):
         if file.endswith(".py"):
             extension = file[:-3]
+            if extension == "voice" and not voice_enabled:
+                bot.logger.info("Skipping voice extension (run with --voice to enable)")
+                continue
             try:
                 await bot.load_extension(f"cogs.{extension}")
                 bot.logger.info(f"Loaded extension '{extension}'")
@@ -653,12 +658,33 @@ async def on_message_delete(message: discord.Message) -> None:
         await check_thinkso_pair(message.channel, message.id, message.author)
 
 
-asyncio.run(init_db())
-asyncio.run(load_cogs())
+ENABLE_VOICE_COG = False
 
 
+def parse_cli_args(argv: list[str]):
+    parser = argparse.ArgumentParser(description="Forsen Twitch chat bot controller", add_help=True)
+    parser.add_argument(
+        "--voice",
+        action="store_true",
+        help="Load the voice cog for audio playback commands",
+    )
+    args, remaining = parser.parse_known_args(argv)
+    return args, remaining
 
-bot.run(config["token"])
+
+def main():
+    args, remaining = parse_cli_args(sys.argv[1:])
+
+    global ENABLE_VOICE_COG
+    ENABLE_VOICE_COG = args.voice
+    if not ENABLE_VOICE_COG:
+        logging.getLogger(__name__).info("Voice cog not enabled (run with --voice to enable)")
+
+    sys.argv = [sys.argv[0]] + remaining
+    asyncio.run(init_db())
+    asyncio.run(load_cogs())
+    bot.run(config["token"])
 
 
-
+if __name__ == "__main__":
+    main()
