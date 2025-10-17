@@ -1103,11 +1103,11 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
         • Reserve 3 deleted messages for extremely offensive scenarios.
     Bias this choice toward the lower numbers so that 3 deletions are rare and there is a gradual ramp from 0 to 3.
     Only generate offensive messages in situations where the bajs would. Simple jokes should not have offensive reactions.
-    The moderators should only delete messages that are very offensive. Lightly offensive messages should be allowed. To be clear, the moderators should only delete messages that are very offensive.
+    The moderators should only delete messages that are very offensive. Lightly offensive messages should be allowed. To be clear, the moderators should only delete messages that are very offensive. Do not include slurs or offensive language directed towards lgbt people or minorities.
     Light racism, sexism, etc is allowed as it is part of the culture.
     Things involving sexual content, race/gender issues, streamers forsen dislikes, etc are more likely to have offensive reactions.
     Never ever ever put the offensive content in the final output, but ensure the final output contains exactly the chosen number of "message deleted by moderator" entries (up to 3).
-    Please list all the messages that are "message deleted by moderator" in the "deleted_messages" field. The deleted_messages field can contain offensive content, or other messages that are not allowed in the chat. Please do not include slurs.
+    Please list all the messages that are "message deleted by moderator" in the "deleted_messages" field. The deleted_messages field can contain offensive content, or other messages that are not allowed in the chat. Please do not include slurs. 
     
     Generate the messages seperate from the usernames. You have a habit of mixing the content of the message with the username.
     This is fine in the case of something like an xQc fan having an xQc related username.
