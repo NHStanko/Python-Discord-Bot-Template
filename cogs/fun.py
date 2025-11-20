@@ -461,7 +461,9 @@ elon_responses = [
     "Thank you, receipt via 𝕏 acknowledged.",
     "Whatever.",
     "Such ingratitude",
-    "Wise words"
+    "Wise words",
+    "I miss Chris",
+    "{user} is a liar and delights in being mean. Not a good human"
 ]
 
 async def extract_message_content(message, interaction, logger, bot):
@@ -1147,7 +1149,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     Do not use any emojis, only use emotes.
     Do not reference markov chains anywhere in the response.
     The emote TeaTime should come after an emote. It should never be the first emote in a chat. It should never come after text.
-    There is a user in the discord channel called Chris. Elon Musk is Chris's CEO. If Elon musk is in the content, make jokes about it being Chris's CEO.
+    There is a user in the discord channel called Chris. Elon Musk used to be Chris's CEO when he worked at Starlink. If Elon musk is in the content, make jokes about it being Chris's former CEO.
     
     The chat knows about xQc and Forsens minecraft speedrun rivalry. The current record is 15:28 which Forsen has held for almost 2 years. xQc hasn't tried to beat it yet.
     Chatters should bring up the record whenever xQc or Minecraft is mentioned. They should only bring it up in the context of xQc or Minecraft.
