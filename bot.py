@@ -371,17 +371,13 @@ async def load_cogs() -> None:
                 exception = f"{type(e).__name__}: {e}"
                 bot.logger.error(f"Failed to load extension {extension}\n{exception}")
                 
-# User lists for different thinkso behaviors
-THINKSO_OPPOSITE_USERS = [157694052337188865]  # Responds with opposite emoji
-THINKSO_FOLLOW_USERS = [66660999314280448]     # Responds with same emoji
-
-@register_message_handler(user_ids=THINKSO_OPPOSITE_USERS + THINKSO_FOLLOW_USERS)
+@register_message_handler()
 async def idontthinkso(message: discord.Message) -> None:
     import re
     
     emojis = await bot.fetch_application_emojis()
     # [<Emoji id=1399554109014675507 name='NOIDONTTHINKSO' animated=True managed=False>, <Emoji id=1399554124390858852 name='YESIDOTHINKSO' animated=True managed=False>]
-    # If the message is only one of the emojis, respond with the other one
+    # If the message is only one of the emojis, respond based on the weighted behavior rules
     # Check if the message is only a single emoji (It looks like <a:NOIDONTTHINKSO:803763692210487357>)
     
     # Regex to match a single emoji in the message (animated or static)
@@ -389,27 +385,20 @@ async def idontthinkso(message: discord.Message) -> None:
     match = re.match(emoji_pattern, message.content.strip())
     
     if match:
-        emoji_name = match.group(1).lower()  # Get emoji name in lowercase
-        
-        # Check if it's one of our target emojis
-        if emoji_name in ['noidontthinkso', 'yesidothinkso']:
-            # Determine user behavior
-            if message.author.id in THINKSO_OPPOSITE_USERS:
-                # Opposite behavior - respond with the opposite emoji
-                if emoji_name == 'noidontthinkso':
-                    target_emoji = discord.utils.get(emojis, name='YESIDOTHINKSO')
-                else:  # yesidothinkso
-                    target_emoji = discord.utils.get(emojis, name='NOIDONTTHINKSO')
-            elif message.author.id in THINKSO_FOLLOW_USERS:
-                # Follow behavior - respond with the same emoji
-                target_emoji = discord.utils.get(emojis, name=emoji_name.upper())
-            else:
-                # Default to opposite behavior for unknown users
-                if emoji_name == 'noidontthinkso':
-                    target_emoji = discord.utils.get(emojis, name='YESIDOTHINKSO')
-                else:  # yesidothinkso
-                    target_emoji = discord.utils.get(emojis, name='NOIDONTTHINKSO')
-            
+        emoji_name = match.group(1).upper()  # Work with uppercase names
+
+        if emoji_name in ['NOIDONTTHINKSO', 'YESIDOTHINKSO']:
+            roll = random.random()
+            # 50% chance to ignore the message
+            if roll < 0.5:
+                return
+
+            if roll < 0.875:  # Next 37.5% reverses the emoji
+                target_name = 'YESIDOTHINKSO' if emoji_name == 'NOIDONTTHINKSO' else 'NOIDONTTHINKSO'
+            else:  # Remaining 12.5% matches the emoji
+                target_name = emoji_name
+
+            target_emoji = discord.utils.get(emojis, name=target_name)
             if target_emoji:
                 await message.channel.send(str(target_emoji))
 
@@ -531,26 +520,14 @@ async def check_thinkso_pair(channel: discord.TextChannel, message_id: int, trig
             user_message = messages[user_idx]
             bot_message = messages[bot_idx]
             
-            # Determine expected bot response based on user type
-            # THINKSO_OPPOSITE_USERS: User says "YESIDOTHINKSO" -> Bot should say "NOIDONTTHINKSO" (and vice versa)
-            # THINKSO_FOLLOW_USERS: User says "YESIDOTHINKSO" -> Bot should say "YESIDOTHINKSO" (same)
-            if user_message.author.id in THINKSO_OPPOSITE_USERS:
-                # User should get opposite response
-                expected_bot_thinkso = get_opposite_thinkso(user_thinkso)
-                is_suspicious = (user_thinkso == bot_thinkso)
-            elif user_message.author.id in THINKSO_FOLLOW_USERS:
-                # User should get same response
-                expected_bot_thinkso = user_thinkso
-                is_suspicious = (user_thinkso != bot_thinkso)
-            else:
-                # Default to opposite behavior for unknown users
-                expected_bot_thinkso = get_opposite_thinkso(user_thinkso)
-                is_suspicious = (user_thinkso == bot_thinkso)
-            
-            # For reversed order, always check if the bot's response is correct
-            # This catches cases where someone creates a bot->user pair with wrong thinksos
+            # Bot can now either mirror or flip the emoji; treat both as valid responses
+            expected_bot_thinkso = get_opposite_thinkso(user_thinkso)
+            allowed_bot_thinksos = {user_thinkso, expected_bot_thinkso}
+            is_suspicious = bot_thinkso not in allowed_bot_thinksos
+
+            # For reversed order, always check if the bot's response is one of the allowed options
             if is_reversed:
-                is_suspicious = (bot_thinkso != expected_bot_thinkso)
+                is_suspicious = bot_thinkso not in allowed_bot_thinksos
             
             # Check if the response is suspicious
             if is_suspicious:

@@ -68,11 +68,15 @@ class Voice(commands.Cog, name="voice"):
         Returns:
             List[app_commands.Choice[str]]: list of choices that have the current input in them
         """
-        sounds = get_sound()
+        sounds = sorted(get_sound())
+        current = current.strip().lower()
+        matching_sounds = [
+            sound for sound in sounds if not current or current in sound.lower()
+        ]
+
         return [
             app_commands.Choice(name=sound, value=sound)
-            for sound in sounds
-            if current.lower() in sound.lower()
+            for sound in matching_sounds[:25]
         ]
 
     @commands.hybrid_command(

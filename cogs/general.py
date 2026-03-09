@@ -33,20 +33,26 @@ class General(commands.Cog, name="general"):
             description=f"You can use / or {prefix} for any of these commands\nList of available commands:",
             color=0x9C84EF,
         )
-        for i in self.bot.cogs:
+        for cog_name, cog in self.bot.cogs.items():
             # if cog is owner only and the user is not the owner, skip it
-            if i.lower() == "owner" and not await self.bot.is_owner(context.author):
+            if cog_name.lower() == "owner" and not await self.bot.is_owner(context.author):
                 continue
 
-            cog = self.bot.get_cog(i.lower())
-            commands = cog.get_commands()
+            if cog is None:
+                continue
+
+            visible_commands = cog.get_commands()
             data = []
-            for command in commands:
-                description = command.description.partition("\n")[0]
+            for command in visible_commands:
+                description = command.description.partition("\n")[0] or "No description provided."
                 data.append(f"{prefix}{command.name} - {description}")
+
+            if not data:
+                continue
+
             help_text = "\n".join(data)
             embed.add_field(
-                name=i.capitalize(), value=f"```{help_text}```", inline=False
+                name=cog_name.capitalize(), value=f"```{help_text}```", inline=False
             )
         await context.author.send(embed=embed)
         await context.send(

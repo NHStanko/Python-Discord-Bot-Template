@@ -1,7 +1,7 @@
 aiohttp
 aiosqlite
-discord.py
-discord.py[voice]
+discord.py[voice] @ git+https://github.com/Rapptz/discord.py@v2.7.1
+davey==0.1.4
 PyNaCl
 yt-dlp
 google-genai
