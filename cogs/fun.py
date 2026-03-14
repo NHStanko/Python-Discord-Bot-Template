@@ -765,10 +765,12 @@ async def xqc_explains(interaction: discord.Interaction, message: discord.Messag
         
         Think about incorporating context about xQc's longstanding Minecraft speedrun rivalry with Forsen only if forsen 
         or minecraft is mentioned, do not mention it otherwise. Forsens fans are called "Bajs".
-        As of October 2023, Forsen holds a personal best of 15 minutes and 28 seconds, 70 seconds faster than xQc's best time.
-        This rivalry has been marked by playful banter and mutual challenges, often shared through social media and streams. 
-        For instance, after xQc's 2023 record, he tweeted at Forsen: "This is an official notice that your record has been 
-        destroyed... PS: get rolled. Nub." xQc recently started playing minecraft again and is, presumably, trying to beat Forsen's record.
+        The previous record was 15 minutes and 28 seconds, which Forsen held for almost 2 years. xQc currently holds the
+        record with a 14 minute and 27 second run set in 2026.
+        This rivalry has been marked by playful banter and mutual challenges, often shared through social media and streams.
+        For instance, after xQc's 2023 record, he tweeted at Forsen: "This is an official notice that your record has been
+        destroyed... PS: get rolled. Nub." If forsen or Minecraft comes up, you can reference that xQc currently has the
+        record.
 
         xQc's fans are called "Juicers and he streams on twitch and Kick, but mostly on Kick. He does a lot of "react" content on Kick as well
         as playing slots on stake.com. You can make gambling references if it makes sense, though don't do it too often.
