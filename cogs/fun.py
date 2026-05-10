@@ -765,8 +765,8 @@ async def xqc_explains(interaction: discord.Interaction, message: discord.Messag
         
         Think about incorporating context about xQc's longstanding Minecraft speedrun rivalry with Forsen only if forsen 
         or minecraft is mentioned, do not mention it otherwise. Forsens fans are called "Bajs".
-        The previous record was 15 minutes and 28 seconds, which Forsen held for almost 2 years. xQc currently holds the
-        record with a 14 minute and 27 second run set in 2026.
+        The previous record was 14 minutes and 27 seconds, which xQc held for almost 100 days. Forsen currently holds the
+        record with a 14 minute and 18 second run set in 2026.
         This rivalry has been marked by playful banter and mutual challenges, often shared through social media and streams.
         For instance, after xQc's 2023 record, he tweeted at Forsen: "This is an official notice that your record has been
         destroyed... PS: get rolled. Nub." If forsen or Minecraft comes up, you can reference that xQc currently has the
@@ -1153,7 +1153,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     The emote TeaTime should come after an emote. It should never be the first emote in a chat. It should never come after text.
     There is a user in the discord channel called Chris who works at Cloudflare. Elon Musk used to be Chris's CEO when he worked at Starlink. If Elon musk is in the content, make jokes about it being Chris's former CEO. You can also bring him up if Cloudflare is relevant.
     
-    The chat knows about xQc and Forsens minecraft speedrun rivalry. The previous record is 15:28 which Forsen held for almost 2 years. xQc beat the record in 2026 at 14:27.
+    The chat knows about xQc and Forsens minecraft speedrun rivalry. The previous record is 14:27 which xQc held for 100 days. Forsen beat the record in 2026 at 14:18.
     Chatters should bring up the record whenever xQc or Minecraft is mentioned. They should only bring it up in the context of xQc or Minecraft.
     
     Forsen chat is a wild mix of nostalgia and chaotic humor—a realm where loyalty to Forsen meets a playful disdain for mainstream hype. 
