@@ -329,6 +329,43 @@ class Fun(commands.Cog, name="fun"):
         print(f"{more} added")
     
     @commands.hybrid_command(
+        name="gex",
+        description="Gex Update"
+    )
+    async def gex(self, context: Context) -> None:
+        """
+        Send a button that shares random facts about Gex.
+
+        :param context: The hybrid command context.
+        """
+        view = Gex_Update()
+        await context.send("Press the button for a Gex fact.", view=view)
+
+    @commands.hybrid_command(
+        name="isbabysleeping",
+        description="Ask if the baby is sleeping."
+    )
+    async def isbabysleeping(self, context: Context) -> None:
+        """
+        Ask whether the baby is sleeping.
+
+        :param context: The hybrid command context.
+        """
+        responses = [
+            "idk",
+            "maybe",
+            "maybe?",
+            "probably",
+            "probably not",
+            "hard to say",
+            "could be",
+            "ask again in five minutes",
+            "sleeping? in this economy?",
+            "50/50",
+        ]
+        await context.send(random.choice(responses))
+
+    @commands.hybrid_command(
         name="purgebot",
         description="Remove all messages from the bot"
     )
@@ -375,6 +412,41 @@ sex_responses = {
     "Anyway, how's your sex life": 1,
     
 }
+
+gex_facts = [
+    "Gex is a wisecracking platform game developed by Crystal Dynamics.",
+    "The first Gex game launched on the 3DO before being ported to other platforms.",
+    "Gex is a gecko who gets pulled into a television-themed world called the Media Dimension.",
+    "Comedian Dana Gould voiced Gex in the original North American releases.",
+    "Gex's remote control is one of the series' most recognizable symbols.",
+    "Gex: Enter the Gecko moved the series from 2D platforming into 3D platforming.",
+    "Many Gex levels parody TV genres like cartoons, horror, sci-fi, and kung fu movies.",
+    "Gex often attacks enemies with tail whips and tongue grabs.",
+    "The series became known for pop-culture one-liners and fourth-wall jokes.",
+    "Gex 3: Deep Cover Gecko added Agent Xtra as a mission guide character.",
+    "Crystal Dynamics later became better known for Legacy of Kain and Tomb Raider games.",
+    "Gex has been away long enough that fans often joke every announcement could be Gex time.",
+    "Gex can climb certain walls and surfaces thanks to his gecko abilities.",
+    "Gex: Enter the Gecko was released on Nintendo 64, PlayStation, and PC.",
+    "Gex 3: Deep Cover Gecko was released on PlayStation, Nintendo 64, and Game Boy Color.",
+    "The original Gex uses channel-themed worlds inspired by different TV programming blocks.",
+    "Gex collects remote controls to unlock more areas of the Media Dimension.",
+    "Gex's main villain is Rez, a cybernetic overlord obsessed with television.",
+    "Some Gex ports changed dialogue and jokes for different regions.",
+    "Gex makes frequent references to movies, celebrities, and television shows from the 1990s.",
+]
+
+class Gex_Update(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=36000)
+
+    @discord.ui.button(label='Gex Update', style=discord.ButtonStyle.green)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            f"{interaction.user.mention}\n{random.choice(gex_facts)}",
+            delete_after=60,
+        )
+
     
 class Sex_Update(discord.ui.View):
     def __init__(self):
