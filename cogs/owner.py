@@ -14,6 +14,7 @@ import time
 import os
 import subprocess
 import logging
+from pathlib import Path
 
 from helpers import checks, db_manager
 
@@ -295,13 +296,16 @@ class Owner(commands.Cog, name="owner"):
 
         :param context: The command context.
         """
-        embed = discord.Embed(title="Bajs Update", color=0x9C84EF)
-        embed.description = (
-            """
-            • Encouraged the bajs' to use less slurs\n
-            • Added security features to prevent thinkso manipulation
-            """
-        )
+        updates_path = Path(__file__).resolve().parents[1] / "UPDATES.md"
+        updates = updates_path.read_text(encoding="utf-8")
+        lines = [
+            line.removeprefix("* ")
+            for line in updates.splitlines()
+            if line.startswith("* ")
+        ]
+
+        embed = discord.Embed(title="Latest Update", color=0x9C84EF)
+        embed.description = "\n".join(f"• {line}" for line in lines)
         await context.send(embed=embed)
 
 

@@ -232,7 +232,7 @@ async def status_task() -> None:
     """
     Setup the game status task of the bot.
     """
-    statuses = ["sex update"]
+    statuses = ["gex update"]
     await bot.change_presence(activity=discord.Game(random.choice(statuses)))
 
 
