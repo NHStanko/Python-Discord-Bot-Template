@@ -760,6 +760,117 @@ async def extract_message_content(message, interaction, logger, bot):
         logger.debug(f"Embed refetch logic encountered an error: {e}")
             
     return content_text, image_path, title, description, url, temp_files
+
+
+def _context_message_text(message):
+    """Return a compact, attributed representation of a Discord message."""
+    author = getattr(getattr(message, "author", None), "display_name", "Unknown user")
+    content = (getattr(message, "content", None) or "").strip()
+    parts = [content] if content else []
+    for embed in getattr(message, "embeds", []):
+        if embed.title:
+            parts.append(f"Embed title: {embed.title}")
+        if embed.description:
+            parts.append(f"Embed description: {embed.description}")
+    return f"{author}: {' | '.join(parts) or '[no text]'}"
+
+
+def _message_image_url(message):
+    """Find the first image attached to, or embedded in, a message."""
+    image_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tiff', '.ico')
+    for attachment in getattr(message, "attachments", []):
+        filename = getattr(attachment, "filename", "").lower()
+        content_type = getattr(attachment, "content_type", None) or ""
+        if filename.endswith(image_extensions) or content_type.startswith("image/"):
+            return attachment.url
+
+    for embed in getattr(message, "embeds", []):
+        if embed.image and embed.image.url:
+            return embed.image.url
+        if embed.thumbnail and embed.thumbnail.url:
+            return embed.thumbnail.url
+    return None
+
+
+async def _reply_chain(message, logger):
+    """Follow a message's references from its parent to the oldest ancestor."""
+    chain = []
+    current = message
+    seen_ids = {message.id}
+
+    while getattr(current, "reference", None) and current.reference.message_id:
+        parent_id = current.reference.message_id
+        if parent_id in seen_ids:
+            logger.warning("Stopped a cyclic reply chain at message ID %s", parent_id)
+            break
+        seen_ids.add(parent_id)
+
+        parent = getattr(current.reference, "resolved", None)
+        if not isinstance(parent, discord.Message):
+            try:
+                parent = await current.channel.fetch_message(parent_id)
+            except (discord.HTTPException, discord.NotFound, discord.Forbidden) as error:
+                logger.info("Could not fetch reply-chain message %s: %s", parent_id, error)
+                break
+
+        chain.append(parent)
+        current = parent
+
+    chain.reverse()
+    return chain
+
+
+async def add_message_context(message, prompt, image_path, temp_files, bot, logger):
+    """Add reply-chain and recent-channel context, plus one fallback context image."""
+    reply_messages = await _reply_chain(message, logger)
+
+    recent_messages = []
+    try:
+        history = message.channel.history(limit=5, before=message)
+        recent_messages = [item async for item in history]
+        recent_messages.reverse()
+    except (discord.HTTPException, discord.Forbidden) as error:
+        logger.info("Could not load recent message context: %s", error)
+
+    reply_ids = {item.id for item in reply_messages}
+    recent_messages = [item for item in recent_messages if item.id not in reply_ids]
+
+    sections = [f"MAIN MESSAGE (the content you must respond to):\n{prompt}"]
+    if reply_messages:
+        reply_text = "\n".join(_context_message_text(item) for item in reply_messages)
+        sections.append(
+            "REPLY CHAIN (ancestors of the main message; use this to understand what "
+            f"the main message replies to):\n{reply_text}"
+        )
+    if recent_messages:
+        recent_text = "\n".join(_context_message_text(item) for item in recent_messages)
+        sections.append(
+            "RECENT CHANNEL CONTEXT (supplemental only):\n"
+            "You may reference these messages ONLY when they are directly relevant to the "
+            "MAIN MESSAGE. Otherwise, ignore them completely.\n"
+            f"{recent_text}"
+        )
+
+    if not image_path:
+        # Prefer a reply ancestor, then the newest recent message.
+        image_sources = list(reversed(reply_messages)) + list(reversed(recent_messages))
+        for context_message in image_sources:
+            image_url = _message_image_url(context_message)
+            if not image_url:
+                continue
+            ai_helper = load_ai_helper_from_config(bot, logger=logger)
+            if ai_helper:
+                image_path = await ai_helper.download_image(image_url)
+            if image_path:
+                temp_files.append(image_path)
+                sections.append(
+                    "CONTEXT IMAGE NOTE: The supplied image comes from an earlier context "
+                    "message, not the MAIN MESSAGE. Discuss or reference it ONLY if it is "
+                    "directly relevant to the MAIN MESSAGE; otherwise ignore it completely."
+                )
+                break
+
+    return "\n\n".join(sections), image_path
     
 @app_register_decorator(name="Elon Reply", type=discord.AppCommandType.message)
 async def elon_reply(interaction: discord.Interaction, message: discord.Message) -> None:
@@ -813,14 +924,14 @@ async def xqc_explains(interaction: discord.Interaction, message: discord.Messag
             prompt = f"{prompt}\nDescription: {description}"
         if url:
             prompt = f"{prompt}\nURL: {url}"
-        
-        if not prompt.strip() and not image_path:
-            await interaction.followup.send("There's no content to explain.", ephemeral=True)
-            return
-        
+
         # Add placeholder text if the prompt is empty to prevent API errors
         if not prompt.strip() and image_path:
             prompt = "Please explain this image."
+
+        prompt, image_path = await add_message_context(
+            message, prompt, image_path, temp_files, interaction.client, logger
+        )
             
         logger.info(f"Final prompt prepared: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
         
@@ -926,15 +1037,14 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
         prompt = f"{prompt}\nDescription: {description}"
     if url:
         prompt = f"{prompt}\nURL: {url}"
-    
-    if not prompt.strip() and not image_path:
-        # Respond to the interaction saying there is a problem with the AI
-        await interaction.followup.send("Tell Nick there is a problem with the AI", ephemeral=True)
-        return
-    
+
     # Add placeholder text if the prompt is empty to prevent API errors
-    if (url and not title and not description and image_path) or not prompt.strip():
+    if image_path and ((url and not title and not description) or not prompt.strip()):
         prompt = "Please respond to this image."
+
+    prompt, image_path = await add_message_context(
+        message, prompt, image_path, temp_files, interaction.client, logger
+    )
         
     logger.info(f"Final prompt prepared: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
     
