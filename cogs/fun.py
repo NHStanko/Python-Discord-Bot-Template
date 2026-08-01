@@ -984,7 +984,7 @@ async def xqc_explains(interaction: discord.Interaction, message: discord.Messag
         
         embed.set_author(
             name="xQc", 
-            icon_url="https://pbs.twimg.com/profile_images/1702011519049904128/JXVYGukS_400x400.jpg"
+            icon_url="https://pbs.twimg.com/profile_images/1948335986007474176/diqK-2Jj_400x400.jpg"
         )
         
         await message.reply(embed=embed)
