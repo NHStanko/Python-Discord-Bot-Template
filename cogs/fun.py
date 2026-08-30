@@ -537,7 +537,8 @@ elon_responses = [
     "I miss Chris",
     "{user} probably got flack from his wife's bf for posting this and had to write up a grovelling apology",
     "I'm not upset, just remarking that this sounds fake and gay",
-    "{user} is a liar and delights in being mean. Not a good human"
+    "{user} is a liar and delights in being mean. Not a good human",
+    "This is far too short and boring. Be at least a little vulgar, longer and wittier."
 ]
 
 async def extract_message_content(message, interaction, logger, bot):
