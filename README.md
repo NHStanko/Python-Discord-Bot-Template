@@ -58,6 +58,31 @@ python bot.py
 
 > **Note** You may need to replace `python` with `py`, `python3`, `python3.11`, etc. depending on what Python versions you have installed on the machine.
 
+## Voice cloning (Pocket TTS)
+
+The bot includes global reusable voice profiles powered by Pocket TTS. The
+runtime uses one CPU model and serializes inference because the model state is
+not thread-safe.
+
+Available slash commands:
+
+* `/tts speak voice text` speaks in the caller's voice channel.
+* `/tts list` lists trained voices.
+* `/tts train`, `/tts retrain`, and `/tts delete` manage profiles.
+* `/tts samples add`, `/tts samples list`, and `/tts samples remove` manage
+  retained recordings. Management commands are restricted to IDs in the
+  `owners` config setting.
+
+Reference recordings are retained under `tts.data_dir` and should be treated as
+sensitive biometric-like data. The directory is ignored by Git; mount `/data`
+as a persistent volume when using Docker.
+
+Pocket TTS requires Python 3.10-3.14, FFmpeg, and access to its gated model
+weights. Accept the model terms on Hugging Face, then authenticate with
+`hf auth login` or provide `HF_TOKEN`. Limits can be set in `config.json` or
+overridden with `MAX_VOICE_ATTACHMENT_BYTES`, `MAX_SAMPLES_PER_VOICE`, and
+`MAX_TTS_TEXT_LENGTH`.
+
 
 ## Built With
 

@@ -13,5 +13,12 @@
   "reddit_api_enabled": false,
   "reddit_client_id": "",
   "reddit_client_secret": "",
-  "reddit_user_agent": ""
+  "reddit_user_agent": "",
+  "tts": {
+    "data_dir": "data/tts",
+    "language": "english",
+    "max_attachment_bytes": 20971520,
+    "max_samples_per_voice": 10,
+    "max_text_length": 1500
+  }
 }

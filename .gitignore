@@ -166,3 +166,6 @@ emotes/**/*.json
 test.sh
 
 debug/*
+
+# Retained voice recordings, generated speech, and voice profiles
+/data/
