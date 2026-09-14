@@ -56,14 +56,14 @@ class VoiceVolumeView(discord.ui.View):
     async def volume_up(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        self.volume = min(2.0, round(self.volume + 0.2, 2))
+        self.volume = min(4.0, round(self.volume + 0.2, 2))
         await self.refresh(interaction)
 
     @discord.ui.button(label="Reset", style=discord.ButtonStyle.red)
     async def reset(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        self.volume = 1.0
+        self.volume = 2.0
         await self.refresh(interaction)
 
     @discord.ui.button(label="Confirm", style=discord.ButtonStyle.green)

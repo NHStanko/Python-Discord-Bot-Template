@@ -69,7 +69,8 @@ Available slash commands:
 * `/tts speak voice text` speaks in the caller's voice channel.
 * `/tts list` lists trained voices.
 * `/tts volume` opens an owner-only button panel for adjusting a voice from
-  0% to 200%. The saved level applies to future playback.
+  0% to 400%. Voices default to 200%, and the saved level applies to future
+  playback.
 * `/tts train`, `/tts retrain`, and `/tts delete` manage profiles. Training can
   use either an audio attachment or a YouTube URL with a start time and duration.
 * `/tts samples add`, `/tts samples list`, and `/tts samples remove` manage

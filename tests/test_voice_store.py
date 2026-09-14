@@ -17,7 +17,7 @@ def test_voice_lifecycle_erases_all_files(tmp_path: Path) -> None:
     assert first.is_file() and second.is_file()
     assert store.get_voice("nick-calm").sample_count == 2
     assert store.get_voice("nick-calm").trained
-    assert store.get_voice("nick-calm").volume == 1.0
+    assert store.get_voice("nick-calm").volume == 2.0
 
     updated = store.set_volume("nick-calm", 1.4)
     assert updated.volume == 1.4
@@ -62,8 +62,9 @@ def test_voice_volume_is_limited_to_safe_ffmpeg_values(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         store.set_volume("valid", -0.1)
+    assert store.set_volume("valid", 4.0).volume == 4.0
     with pytest.raises(ValueError):
-        store.set_volume("valid", 2.1)
+        store.set_volume("valid", 4.1)
 
 
 def test_existing_voice_database_gains_default_volume(tmp_path: Path) -> None:
@@ -83,4 +84,4 @@ def test_existing_voice_database_gains_default_volume(tmp_path: Path) -> None:
     store = VoiceStore(tmp_path)
     profile = store.create_voice("legacy", created_by=1)
 
-    assert profile.volume == 1.0
+    assert profile.volume == 2.0

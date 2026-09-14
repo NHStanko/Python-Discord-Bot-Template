@@ -67,7 +67,7 @@ class VoiceStore:
                     created_by INTEGER NOT NULL,
                     state_filename TEXT,
                     needs_retrain INTEGER NOT NULL DEFAULT 0,
-                    volume REAL NOT NULL DEFAULT 1.0,
+                    volume REAL NOT NULL DEFAULT 2.0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -86,7 +86,7 @@ class VoiceStore:
             }
             if "volume" not in columns:
                 db.execute(
-                    "ALTER TABLE voices ADD COLUMN volume REAL NOT NULL DEFAULT 1.0"
+                    "ALTER TABLE voices ADD COLUMN volume REAL NOT NULL DEFAULT 2.0"
                 )
 
     @staticmethod
@@ -253,8 +253,8 @@ class VoiceStore:
 
     def set_volume(self, name: str, volume: float) -> VoiceProfile:
         voice = self.get_voice(name)
-        if volume < 0 or volume > 2:
-            raise ValueError("Voice volume must be between 0% and 200%")
+        if volume < 0 or volume > 4:
+            raise ValueError("Voice volume must be between 0% and 400%")
         with self._connect() as db:
             db.execute(
                 "UPDATE voices SET volume = ?, updated_at = ? WHERE slug = ?",

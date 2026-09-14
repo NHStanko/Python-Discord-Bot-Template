@@ -14,6 +14,7 @@ Here is the most recent update made on this template.
 * Added live progress updates while `/tts train` processes and builds a voice
 * Reduced container size with CPU-only PyTorch, a multi-stage build, and a smaller build context
 * Added a persistent button-based volume panel for trained voices
+* Set the default and reset TTS voice volume to 200%, adjustable up to 400%
 
 ### Also included
 
