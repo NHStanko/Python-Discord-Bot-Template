@@ -68,7 +68,9 @@ Available slash commands:
 
 * `/tts speak voice text` speaks in the caller's voice channel.
 * `/tts sequence` lines up multiple voices and timed pauses in one message. For
-  example: `(forsen) hey (silence) 2 (xqc) hello`.
+  example: `(forsen) hey (pause) 2 (xqc) hello`. Use `(random) text` to choose
+  any trained voice for a line. The older `(silence)` tag remains an alias for
+  `(pause)`.
 * `/tts list` lists trained voices.
 * `/tts volume` opens an owner-only button panel for adjusting a voice from
   0% to 400%. Voices default to 200%, and the saved level applies to future

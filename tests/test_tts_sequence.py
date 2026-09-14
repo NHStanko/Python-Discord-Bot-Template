@@ -1,11 +1,16 @@
 import pytest
 
-from helpers.tts_sequence import SilenceSegment, SpeechSegment, parse_tts_sequence
+from helpers.tts_sequence import (
+    RandomSpeechSegment,
+    SilenceSegment,
+    SpeechSegment,
+    parse_tts_sequence,
+)
 
 
-def test_sequence_parses_voices_and_silence() -> None:
+def test_sequence_parses_voices_and_pauses() -> None:
     assert parse_tts_sequence(
-        "(forsen) hey i'm forsen (silence) 2.5s (xqc) hi forsen"
+        "(forsen) hey i'm forsen (pause) 2.5s (xqc) hi forsen"
     ) == [
         SpeechSegment("forsen", "hey i'm forsen"),
         SilenceSegment(2.5),
@@ -13,13 +18,23 @@ def test_sequence_parses_voices_and_silence() -> None:
     ]
 
 
+def test_sequence_parses_random_voice() -> None:
+    assert parse_tts_sequence("(random) surprise me") == [
+        RandomSpeechSegment("surprise me")
+    ]
+
+
+def test_silence_remains_a_pause_alias() -> None:
+    assert parse_tts_sequence("(silence) 1") == [SilenceSegment(1)]
+
+
 @pytest.mark.parametrize(
     "script",
     [
         "hello (forsen) world",
         "(forsen)",
-        "(silence) nope",
-        "(silence) 31",
+        "(pause) nope",
+        "(pause) 31",
     ],
 )
 def test_sequence_rejects_invalid_scripts(script: str) -> None:

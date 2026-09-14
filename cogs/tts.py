@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import secrets
 from pathlib import Path
 
 import discord
@@ -10,7 +11,12 @@ from discord import app_commands
 from discord.ext import commands
 
 from helpers.tts_service import PocketTTSService
-from helpers.tts_sequence import SilenceSegment, SpeechSegment, parse_tts_sequence
+from helpers.tts_sequence import (
+    RandomSpeechSegment,
+    SilenceSegment,
+    SpeechSegment,
+    parse_tts_sequence,
+)
 from helpers.voice_store import VoiceStore
 
 
@@ -233,7 +239,7 @@ class TTS(commands.Cog, name="tts"):
 
     @tts_group.command(name="sequence", description="Speak a sequence of voices and pauses")
     @app_commands.describe(
-        script="Example: (forsen) Hello (silence) 2 (xqc) Hi there"
+        script="Example: (forsen) Hello (pause) 2 (random) Hi there"
     )
     async def sequence(self, interaction: discord.Interaction, script: str) -> None:
         member = interaction.user
@@ -250,6 +256,19 @@ class TTS(commands.Cog, name="tts"):
             segments = parse_tts_sequence(
                 script, max_segments=20, max_text_length=self.max_text_length
             )
+            random_voices = [
+                profile for profile in self.store.list_voices() if profile.trained
+            ]
+            resolved_segments = []
+            for segment in segments:
+                if isinstance(segment, RandomSpeechSegment):
+                    if not random_voices:
+                        raise ValueError("No trained voices are available for `(random)`")
+                    selected = secrets.choice(random_voices)
+                    resolved_segments.append(SpeechSegment(selected.slug, segment.text))
+                else:
+                    resolved_segments.append(segment)
+            segments = resolved_segments
             profiles = {
                 segment.voice: self.store.get_voice(segment.voice)
                 for segment in segments
@@ -270,7 +289,7 @@ class TTS(commands.Cog, name="tts"):
                 if isinstance(segment, SilenceSegment):
                     await interaction.edit_original_response(
                         content=(
-                            f"⏸️ Adding {segment.duration:g} seconds of silence "
+                            f"⏸️ Adding a {segment.duration:g}-second pause "
                             f"({index}/{len(segments)})..."
                         )
                     )
