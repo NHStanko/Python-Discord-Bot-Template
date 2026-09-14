@@ -11,6 +11,8 @@ Here is the most recent update made on this template.
 * Added configurable attachment, sample-count, and generated-text limits
 * Added persistent profile storage and CPU-only Docker support
 * Added timed YouTube clips as a source for training and additional samples
+* Added live progress updates while `/tts train` processes and builds a voice
+* Reduced container size with CPU-only PyTorch, a multi-stage build, and a smaller build context
 
 ### Also included
 

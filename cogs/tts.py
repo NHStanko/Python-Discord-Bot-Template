@@ -200,16 +200,38 @@ class TTS(commands.Cog, name="tts"):
         await interaction.response.defer(ephemeral=True)
         created = False
         try:
+            if youtube_url is not None:
+                await interaction.edit_original_response(
+                    content=(
+                        f"⏬ Downloading a {duration}-second YouTube clip "
+                        f"starting at {start} seconds..."
+                    )
+                )
+            else:
+                await interaction.edit_original_response(
+                    content="📎 Reading and validating the attached recording..."
+                )
             filename, content = await self.read_sample_source(
                 sample, youtube_url, start, duration
+            )
+            await interaction.edit_original_response(
+                content="💾 Saving the reference recording..."
             )
             self.store.create_voice(name, interaction.user.id)
             created = True
             self.store.add_sample(name, filename, content)
+            await interaction.edit_original_response(
+                content=(
+                    "🧠 Building the voice profile... The first run may take longer "
+                    "while Pocket TTS downloads and loads its model."
+                )
+            )
             await self.tts.train(name)
-            await interaction.followup.send(
-                f"Voice `{self.store.normalize_name(name)}` is trained and globally available.",
-                ephemeral=True,
+            await interaction.edit_original_response(
+                content=(
+                    f"✅ Voice `{self.store.normalize_name(name)}` is trained and "
+                    "globally available."
+                )
             )
         except Exception as exc:
             if created:
@@ -218,7 +240,7 @@ class TTS(commands.Cog, name="tts"):
                 except Exception:
                     logger.exception("Could not roll back failed voice creation")
             logger.exception("Voice training failed")
-            await interaction.followup.send(f"Training failed: {exc}", ephemeral=True)
+            await interaction.edit_original_response(content=f"❌ Training failed: {exc}")
 
     @samples_group.command(name="add", description="Stage another voice sample")
     @app_commands.describe(

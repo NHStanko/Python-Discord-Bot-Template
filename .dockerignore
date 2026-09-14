@@ -1,0 +1,26 @@
+.git
+.github
+.agents
+.codex
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+.venv/
+venv/
+env/
+
+tests/
+data/
+debug/
+*.log
+*.db
+
+# Runtime configuration must be mounted, never baked into the image.
+config/config.json
+
+package.json
+package-lock.json

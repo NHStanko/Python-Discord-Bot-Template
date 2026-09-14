@@ -1,28 +1,50 @@
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm AS builder
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        git \
+        libc6-dev \
+        libffi-dev \
+        libnacl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+COPY requirements.txt /app/requirements.txt
+RUN python -m pip install --no-cache-dir \
+        wheel \
+    && python -m pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        "torch>=2.5,<2.15" \
+    && python -m pip install --no-cache-dir \
+    -r requirements.txt
+
+
+FROM python:3.12-slim-bookworm AS runtime
+
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    TTS_DATA_DIR=/data/tts \
+    HF_HOME=/data/huggingface
 
 WORKDIR /app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ffmpeg \
-        gcc \
-        git \
-        libc6-dev \
-        libffi-dev \
-        libnacl-dev \
         libopus0 \
+        libsodium23 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python -m pip install --no-cache-dir wheel
-COPY requirements.txt /app/requirements.txt
-RUN python -m pip install --no-cache-dir \
-    --extra-index-url https://download.pytorch.org/whl/cpu \
-    -r requirements.txt
-
+COPY --from=builder /opt/venv /opt/venv
 COPY . /app
 
-ENV TTS_DATA_DIR=/data/tts
-RUN mkdir -p /data/tts
+RUN mkdir -p /data/tts /data/huggingface
 VOLUME ["/data"]
 
 CMD ["python", "bot.py", "--voice"]
