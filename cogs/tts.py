@@ -17,6 +17,70 @@ logger = logging.getLogger("discord_bot")
 SUPPORTED_AUDIO_SUFFIXES = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".opus", ".webm"}
 
 
+class VoiceVolumeView(discord.ui.View):
+    def __init__(
+        self, store: VoiceStore, voice: str, volume: float, owner_id: int
+    ) -> None:
+        super().__init__(timeout=180)
+        self.store = store
+        self.voice = voice
+        self.volume = volume
+        self.owner_id = owner_id
+
+    @property
+    def content(self) -> str:
+        return (
+            f"Adjusting `{self.voice}` volume: **{round(self.volume * 100)}%**\n"
+            "Changes apply after you press **Confirm**."
+        )
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.owner_id:
+            return True
+        await interaction.response.send_message(
+            "Only the owner who opened this panel can use it.", ephemeral=True
+        )
+        return False
+
+    async def refresh(self, interaction: discord.Interaction) -> None:
+        await interaction.response.edit_message(content=self.content, view=self)
+
+    @discord.ui.button(label="Vol Down", style=discord.ButtonStyle.gray)
+    async def volume_down(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        self.volume = max(0.0, round(self.volume - 0.2, 2))
+        await self.refresh(interaction)
+
+    @discord.ui.button(label="Vol Up", style=discord.ButtonStyle.gray)
+    async def volume_up(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        self.volume = min(2.0, round(self.volume + 0.2, 2))
+        await self.refresh(interaction)
+
+    @discord.ui.button(label="Reset", style=discord.ButtonStyle.red)
+    async def reset(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        self.volume = 1.0
+        await self.refresh(interaction)
+
+    @discord.ui.button(label="Confirm", style=discord.ButtonStyle.green)
+    async def confirm(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ) -> None:
+        profile = self.store.set_volume(self.voice, self.volume)
+        self.stop()
+        await interaction.response.edit_message(
+            content=(
+                f"✅ `{profile.slug}` volume set to "
+                f"**{round(profile.volume * 100)}%**."
+            ),
+            view=None,
+        )
+
+
 class TTS(commands.Cog, name="tts"):
     tts_group = app_commands.Group(name="tts", description="Generate and manage speech")
     samples_group = app_commands.Group(
@@ -128,6 +192,7 @@ class TTS(commands.Cog, name="tts"):
         await interaction.response.defer(ephemeral=True)
         output: Path | None = None
         try:
+            profile = self.store.get_voice(voice)
             output = await self.tts.synthesize(voice, text.strip())
             channel = member.voice.channel
             client = interaction.guild.voice_client
@@ -148,7 +213,12 @@ class TTS(commands.Cog, name="tts"):
                         logger.error, "Discord TTS playback failed: %s", error
                     )
 
-            client.play(discord.FFmpegPCMAudio(str(output)), after=finished)
+            client.play(
+                discord.FFmpegPCMAudio(
+                    str(output), options=f"-af volume={profile.volume:.2f}"
+                ),
+                after=finished,
+            )
             output = None
             await interaction.followup.send(
                 f"Speaking with `{self.store.normalize_name(voice)}`.", ephemeral=True
@@ -173,10 +243,32 @@ class TTS(commands.Cog, name="tts"):
             status = " · staged changes" if voice.needs_retrain else ""
             if not voice.trained:
                 status = " · needs training"
-            lines.append(f"`{voice.slug}` · {voice.sample_count} sample(s){status}")
+            lines.append(
+                f"`{voice.slug}` · {voice.sample_count} sample(s) · "
+                f"{round(voice.volume * 100)}% volume{status}"
+            )
         await interaction.response.send_message(
             "**Global voices**\n" + "\n".join(lines), ephemeral=True
         )
+
+    @tts_group.command(name="volume", description="Adjust a voice's playback volume")
+    @app_commands.describe(voice="Voice")
+    @app_commands.autocomplete(voice=voice_autocomplete)
+    async def volume(self, interaction: discord.Interaction, voice: str) -> None:
+        if not await self.require_owner(interaction):
+            return
+        try:
+            profile = self.store.get_voice(voice)
+            view = VoiceVolumeView(
+                self.store, profile.slug, profile.volume, interaction.user.id
+            )
+            await interaction.response.send_message(
+                view.content, view=view, ephemeral=True
+            )
+        except Exception as exc:
+            await interaction.response.send_message(
+                f"Could not adjust voice volume: {exc}", ephemeral=True
+            )
 
     @tts_group.command(name="train", description="Train a new global voice")
     @app_commands.describe(

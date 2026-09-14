@@ -13,6 +13,7 @@ Here is the most recent update made on this template.
 * Added timed YouTube clips as a source for training and additional samples
 * Added live progress updates while `/tts train` processes and builds a voice
 * Reduced container size with CPU-only PyTorch, a multi-stage build, and a smaller build context
+* Added a persistent button-based volume panel for trained voices
 
 ### Also included
 

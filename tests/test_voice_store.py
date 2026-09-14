@@ -1,4 +1,5 @@
 from pathlib import Path
+import sqlite3
 
 import pytest
 
@@ -16,6 +17,11 @@ def test_voice_lifecycle_erases_all_files(tmp_path: Path) -> None:
     assert first.is_file() and second.is_file()
     assert store.get_voice("nick-calm").sample_count == 2
     assert store.get_voice("nick-calm").trained
+    assert store.get_voice("nick-calm").volume == 1.0
+
+    updated = store.set_volume("nick-calm", 1.4)
+    assert updated.volume == 1.4
+    assert store.get_voice("nick-calm").volume == 1.4
 
     deleted = store.delete_voice("nick-calm")
 
@@ -48,3 +54,33 @@ def test_duplicate_and_invalid_names_are_rejected(tmp_path: Path) -> None:
         store.create_voice("valid", created_by=2)
     with pytest.raises(ValueError):
         store.create_voice("../escape", created_by=1)
+
+
+def test_voice_volume_is_limited_to_safe_ffmpeg_values(tmp_path: Path) -> None:
+    store = VoiceStore(tmp_path)
+    store.create_voice("valid", created_by=1)
+
+    with pytest.raises(ValueError):
+        store.set_volume("valid", -0.1)
+    with pytest.raises(ValueError):
+        store.set_volume("valid", 2.1)
+
+
+def test_existing_voice_database_gains_default_volume(tmp_path: Path) -> None:
+    with sqlite3.connect(tmp_path / "voices.sqlite3") as database:
+        database.execute(
+            """CREATE TABLE voices (
+                slug TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                created_by INTEGER NOT NULL,
+                state_filename TEXT,
+                needs_retrain INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )"""
+        )
+
+    store = VoiceStore(tmp_path)
+    profile = store.create_voice("legacy", created_by=1)
+
+    assert profile.volume == 1.0

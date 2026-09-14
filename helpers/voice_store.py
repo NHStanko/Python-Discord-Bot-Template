@@ -21,6 +21,7 @@ class VoiceProfile:
     sample_count: int
     trained: bool
     needs_retrain: bool
+    volume: float
     updated_at: str
 
 
@@ -66,6 +67,7 @@ class VoiceStore:
                     created_by INTEGER NOT NULL,
                     state_filename TEXT,
                     needs_retrain INTEGER NOT NULL DEFAULT 0,
+                    volume REAL NOT NULL DEFAULT 1.0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -79,6 +81,13 @@ class VoiceStore:
                 );
                 """
             )
+            columns = {
+                row[1] for row in db.execute("PRAGMA table_info(voices)").fetchall()
+            }
+            if "volume" not in columns:
+                db.execute(
+                    "ALTER TABLE voices ADD COLUMN volume REAL NOT NULL DEFAULT 1.0"
+                )
 
     @staticmethod
     def normalize_name(name: str) -> str:
@@ -98,6 +107,7 @@ class VoiceStore:
             sample_count=row["sample_count"],
             trained=bool(row["state_filename"]),
             needs_retrain=bool(row["needs_retrain"]),
+            volume=float(row["volume"]),
             updated_at=row["updated_at"],
         )
 
@@ -240,6 +250,17 @@ class VoiceStore:
                    updated_at = ? WHERE slug = ?""",
                 ("voice.safetensors", now, voice.slug),
             )
+
+    def set_volume(self, name: str, volume: float) -> VoiceProfile:
+        voice = self.get_voice(name)
+        if volume < 0 or volume > 2:
+            raise ValueError("Voice volume must be between 0% and 200%")
+        with self._connect() as db:
+            db.execute(
+                "UPDATE voices SET volume = ?, updated_at = ? WHERE slug = ?",
+                (round(volume, 2), datetime.now(timezone.utc).isoformat(), voice.slug),
+            )
+        return self.get_voice(voice.slug)
 
     def delete_voice(self, name: str) -> VoiceProfile:
         voice = self.get_voice(name)
