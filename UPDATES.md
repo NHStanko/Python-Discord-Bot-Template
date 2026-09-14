@@ -10,6 +10,7 @@ Here is the most recent update made on this template.
 * Added voice and sample autocomplete
 * Added configurable attachment, sample-count, and generated-text limits
 * Added persistent profile storage and CPU-only Docker support
+* Added timed YouTube clips as a source for training and additional samples
 
 ### Also included
 

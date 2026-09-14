@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from helpers.voice_store import VoiceStore
 
@@ -26,6 +27,75 @@ class PocketTTSService:
             self._model = TTSModel.load_model(language=self.language)
             self._model.to("cpu")
         return self._model
+
+    @staticmethod
+    def _validate_youtube_request(url: str, start: int, duration: int) -> str:
+        parsed = urlparse(url.strip())
+        hostname = (parsed.hostname or "").lower()
+        if parsed.scheme not in {"http", "https"} or hostname not in {
+            "youtube.com",
+            "www.youtube.com",
+            "m.youtube.com",
+            "music.youtube.com",
+            "youtu.be",
+        }:
+            raise ValueError("Use a valid YouTube or youtu.be URL")
+        if start < 0:
+            raise ValueError("Start time cannot be negative")
+        if duration < 1 or duration > 30:
+            raise ValueError("Duration must be between 1 and 30 seconds")
+        return parsed.geturl()
+
+    @classmethod
+    def _download_youtube_sample_sync(
+        cls, url: str, start: int, duration: int, max_bytes: int
+    ) -> tuple[str, bytes]:
+        from yt_dlp import YoutubeDL
+        from yt_dlp.utils import download_range_func
+
+        validated_url = cls._validate_youtube_request(url, start, duration)
+        with tempfile.TemporaryDirectory(prefix="tts-youtube-") as temp_dir:
+            output_template = str(Path(temp_dir) / "sample.%(ext)s")
+            options = {
+                "format": "bestaudio/best",
+                "outtmpl": output_template,
+                "noplaylist": True,
+                "quiet": True,
+                "no_warnings": True,
+                "max_filesize": max(max_bytes * 5, 50 * 1024 * 1024),
+                "download_ranges": download_range_func(
+                    None, [(start, start + duration)]
+                ),
+                "force_keyframes_at_cuts": True,
+                "socket_timeout": 30,
+                "retries": 3,
+            }
+            with YoutubeDL(options) as downloader:
+                info = downloader.extract_info(validated_url, download=True)
+
+            candidates = [
+                path
+                for path in Path(temp_dir).iterdir()
+                if path.is_file() and path.suffix.lower() not in {".part", ".ytdl"}
+            ]
+            if len(candidates) != 1:
+                raise ValueError("YouTube did not produce a usable audio clip")
+            clip = candidates[0]
+            content = clip.read_bytes()
+            if not content:
+                raise ValueError("YouTube produced an empty audio clip")
+            if len(content) > max_bytes:
+                limit = max_bytes // 1024 // 1024
+                raise ValueError(f"Downloaded clip is larger than {limit} MB")
+            video_id = str(info.get("id") or "clip")
+            return f"youtube-{video_id}{clip.suffix.lower()}", content
+
+    async def download_youtube_sample(
+        self, url: str, start: int, duration: int, max_bytes: int
+    ) -> tuple[str, bytes]:
+        return await asyncio.to_thread(
+            self._download_youtube_sample_sync, url, start, duration, max_bytes
+        )
 
     @staticmethod
     def _combine_samples(samples: list[Path], destination: Path) -> None:

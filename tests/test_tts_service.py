@@ -3,6 +3,7 @@ import wave
 from pathlib import Path
 
 import pytest
+import yt_dlp
 
 from helpers.tts_service import PocketTTSService
 
@@ -29,3 +30,51 @@ def test_combine_samples_normalizes_mixed_audio(tmp_path: Path) -> None:
         assert combined.getnchannels() == 1
         assert combined.getframerate() == 24_000
         assert combined.getnframes() == 4_800
+
+
+@pytest.mark.parametrize(
+    ("url", "start", "duration"),
+    [
+        ("https://example.com/video", 0, 10),
+        ("https://youtube.com.evil.test/watch?v=abc", 0, 10),
+        ("https://youtu.be/abc", -1, 10),
+        ("https://youtu.be/abc", 0, 31),
+    ],
+)
+def test_youtube_request_validation_rejects_unsafe_inputs(
+    url: str, start: int, duration: int
+) -> None:
+    with pytest.raises(ValueError):
+        PocketTTSService._validate_youtube_request(url, start, duration)
+
+
+def test_youtube_download_uses_requested_time_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict = {}
+
+    class FakeYoutubeDL:
+        def __init__(self, options: dict):
+            captured.update(options)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def extract_info(self, url: str, download: bool):
+            output = Path(captured["outtmpl"].replace("%(ext)s", "webm"))
+            output.write_bytes(b"audio")
+            return {"id": "abc123", "duration": 100}
+
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", FakeYoutubeDL)
+
+    filename, content = PocketTTSService._download_youtube_sample_sync(
+        "https://youtu.be/abc123", start=12, duration=8, max_bytes=1024
+    )
+
+    requested_ranges = list(
+        captured["download_ranges"]({"duration": 100}, None)
+    )
+    assert requested_ranges == [{"start_time": 12, "end_time": 20}]
+    assert filename == "youtube-abc123.webm"
+    assert content == b"audio"

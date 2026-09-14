@@ -68,10 +68,11 @@ Available slash commands:
 
 * `/tts speak voice text` speaks in the caller's voice channel.
 * `/tts list` lists trained voices.
-* `/tts train`, `/tts retrain`, and `/tts delete` manage profiles.
+* `/tts train`, `/tts retrain`, and `/tts delete` manage profiles. Training can
+  use either an audio attachment or a YouTube URL with a start time and duration.
 * `/tts samples add`, `/tts samples list`, and `/tts samples remove` manage
-  retained recordings. Management commands are restricted to IDs in the
-  `owners` config setting.
+  retained recordings. Additional samples can also come from a timed YouTube
+  clip. Management commands are restricted to IDs in the `owners` config setting.
 
 Reference recordings are retained under `tts.data_dir` and should be treated as
 sensitive biometric-like data. The directory is ignored by Git; mount `/data`

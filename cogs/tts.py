@@ -96,6 +96,21 @@ class TTS(commands.Cog, name="tts"):
             raise ValueError("Attachment exceeds the configured size limit")
         return content
 
+    async def read_sample_source(
+        self,
+        sample: discord.Attachment | None,
+        youtube_url: str | None,
+        start: int,
+        duration: int,
+    ) -> tuple[str, bytes]:
+        if (sample is None) == (youtube_url is None):
+            raise ValueError("Provide either one audio attachment or one YouTube URL")
+        if sample is not None:
+            return sample.filename, await self.read_attachment(sample)
+        return await self.tts.download_youtube_sample(
+            youtube_url or "", start, duration, self.max_attachment_bytes
+        )
+
     @tts_group.command(name="speak", description="Speak with a trained global voice")
     @app_commands.describe(voice="Voice", text="Text to speak")
     @app_commands.autocomplete(voice=voice_autocomplete)
@@ -166,23 +181,31 @@ class TTS(commands.Cog, name="tts"):
     @tts_group.command(name="train", description="Train a new global voice")
     @app_commands.describe(
         name="Unique voice name",
-        sample="Voice recording",
+        sample="Voice recording (use this or youtube_url)",
+        youtube_url="YouTube video (use this or sample)",
+        start="Clip start time in seconds",
+        duration="Clip length in seconds (maximum 30)",
     )
     async def train(
         self,
         interaction: discord.Interaction,
         name: str,
-        sample: discord.Attachment,
+        sample: discord.Attachment | None = None,
+        youtube_url: str | None = None,
+        start: app_commands.Range[int, 0, 86400] = 0,
+        duration: app_commands.Range[int, 1, 30] = 30,
     ) -> None:
         if not await self.require_owner(interaction):
             return
         await interaction.response.defer(ephemeral=True)
         created = False
         try:
-            content = await self.read_attachment(sample)
+            filename, content = await self.read_sample_source(
+                sample, youtube_url, start, duration
+            )
             self.store.create_voice(name, interaction.user.id)
             created = True
-            self.store.add_sample(name, sample.filename, content)
+            self.store.add_sample(name, filename, content)
             await self.tts.train(name)
             await interaction.followup.send(
                 f"Voice `{self.store.normalize_name(name)}` is trained and globally available.",
@@ -198,10 +221,22 @@ class TTS(commands.Cog, name="tts"):
             await interaction.followup.send(f"Training failed: {exc}", ephemeral=True)
 
     @samples_group.command(name="add", description="Stage another voice sample")
-    @app_commands.describe(voice="Voice", sample="Additional voice recording")
+    @app_commands.describe(
+        voice="Voice",
+        sample="Voice recording (use this or youtube_url)",
+        youtube_url="YouTube video (use this or sample)",
+        start="Clip start time in seconds",
+        duration="Clip length in seconds (maximum 30)",
+    )
     @app_commands.autocomplete(voice=voice_autocomplete)
     async def add_sample(
-        self, interaction: discord.Interaction, voice: str, sample: discord.Attachment
+        self,
+        interaction: discord.Interaction,
+        voice: str,
+        sample: discord.Attachment | None = None,
+        youtube_url: str | None = None,
+        start: app_commands.Range[int, 0, 86400] = 0,
+        duration: app_commands.Range[int, 1, 30] = 30,
     ) -> None:
         if not await self.require_owner(interaction):
             return
@@ -212,8 +247,10 @@ class TTS(commands.Cog, name="tts"):
                 raise ValueError(
                     f"A voice may have at most {self.max_samples_per_voice} samples"
                 )
-            content = await self.read_attachment(sample)
-            self.store.add_sample(voice, sample.filename, content)
+            filename, content = await self.read_sample_source(
+                sample, youtube_url, start, duration
+            )
+            self.store.add_sample(voice, filename, content)
             await interaction.followup.send(
                 f"Sample added to `{profile.slug}`. Run `/tts retrain` when ready.",
                 ephemeral=True,
