@@ -172,6 +172,67 @@ class PocketTTSService:
             output.unlink(missing_ok=True)
             raise
 
+    @staticmethod
+    def _combine_sequence_sync(
+        parts: list[tuple[Path | None, float]], destination: Path
+    ) -> None:
+        if not parts:
+            raise ValueError("A sequence needs at least one segment")
+
+        command = ["ffmpeg", "-y"]
+        filters = []
+        for index, (audio_path, value) in enumerate(parts):
+            if audio_path is None:
+                command.extend(
+                    [
+                        "-f",
+                        "lavfi",
+                        "-t",
+                        str(value),
+                        "-i",
+                        "anullsrc=channel_layout=mono:sample_rate=24000",
+                    ]
+                )
+                effect = f",atrim=duration={value}"
+            else:
+                command.extend(["-i", str(audio_path)])
+                effect = f",volume={value}"
+            filters.append(
+                f"[{index}:a]aformat=sample_fmts=fltp:sample_rates=24000:"
+                f"channel_layouts=mono{effect},asetpts=PTS-STARTPTS[a{index}]"
+            )
+
+        inputs = "".join(f"[a{index}]" for index in range(len(parts)))
+        filter_graph = ";".join(
+            filters + [f"{inputs}concat=n={len(parts)}:v=0:a=1[out]"]
+        )
+        command.extend(
+            ["-filter_complex", filter_graph, "-map", "[out]", str(destination)]
+        )
+        result = subprocess.run(command, capture_output=True, text=True, timeout=180)
+        if result.returncode:
+            detail = (
+                result.stderr.strip().splitlines()[-1]
+                if result.stderr.strip()
+                else "unknown error"
+            )
+            raise ValueError(f"FFmpeg could not combine the sequence: {detail}")
+
+    async def combine_sequence(
+        self, parts: list[tuple[Path | None, float]]
+    ) -> Path:
+        handle = tempfile.NamedTemporaryFile(
+            suffix=".wav", dir=self.store.generated_dir, delete=False
+        )
+        output = Path(handle.name)
+        handle.close()
+        try:
+            await asyncio.to_thread(self._combine_sequence_sync, parts, output)
+            return output
+        except Exception:
+            output.unlink(missing_ok=True)
+            raise
+
     async def delete(self, name: str) -> None:
         slug = self.store.normalize_name(name)
         async with self._lock:

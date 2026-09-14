@@ -10,6 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from helpers.tts_service import PocketTTSService
+from helpers.tts_sequence import SilenceSegment, SpeechSegment, parse_tts_sequence
 from helpers.voice_store import VoiceStore
 
 
@@ -227,6 +228,103 @@ class TTS(commands.Cog, name="tts"):
             logger.exception("Speech generation/playback failed")
             await interaction.followup.send(f"Could not speak: {exc}", ephemeral=True)
         finally:
+            if output is not None:
+                output.unlink(missing_ok=True)
+
+    @tts_group.command(name="sequence", description="Speak a sequence of voices and pauses")
+    @app_commands.describe(
+        script="Example: (forsen) Hello (silence) 2 (xqc) Hi there"
+    )
+    async def sequence(self, interaction: discord.Interaction, script: str) -> None:
+        member = interaction.user
+        if not interaction.guild or not isinstance(member, discord.Member) or not member.voice:
+            await interaction.response.send_message("Join a voice channel first.", ephemeral=True)
+            return
+        if interaction.guild.voice_client and interaction.guild.voice_client.is_playing():
+            await interaction.response.send_message(
+                "The bot is already speaking; try again in a moment.", ephemeral=True
+            )
+            return
+
+        try:
+            segments = parse_tts_sequence(
+                script, max_segments=20, max_text_length=self.max_text_length
+            )
+            profiles = {
+                segment.voice: self.store.get_voice(segment.voice)
+                for segment in segments
+                if isinstance(segment, SpeechSegment)
+            }
+        except Exception as exc:
+            await interaction.response.send_message(
+                f"Invalid sequence: {exc}", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        generated: list[Path] = []
+        output: Path | None = None
+        try:
+            parts: list[tuple[Path | None, float]] = []
+            for index, segment in enumerate(segments, start=1):
+                if isinstance(segment, SilenceSegment):
+                    await interaction.edit_original_response(
+                        content=(
+                            f"⏸️ Adding {segment.duration:g} seconds of silence "
+                            f"({index}/{len(segments)})..."
+                        )
+                    )
+                    parts.append((None, segment.duration))
+                    continue
+
+                profile = profiles[segment.voice]
+                await interaction.edit_original_response(
+                    content=(
+                        f"🗣️ Generating `{profile.slug}` "
+                        f"({index}/{len(segments)})..."
+                    )
+                )
+                audio = await self.tts.synthesize(profile.slug, segment.text)
+                generated.append(audio)
+                parts.append((audio, profile.volume))
+
+            await interaction.edit_original_response(
+                content="🎛️ Combining the voices and pauses..."
+            )
+            output = await self.tts.combine_sequence(parts)
+
+            channel = member.voice.channel
+            client = interaction.guild.voice_client
+            if client is None:
+                client = await channel.connect()
+            elif client.channel != channel:
+                await client.move_to(channel)
+            if client.is_playing():
+                raise RuntimeError("The bot started playing something else; try again")
+
+            loop = asyncio.get_running_loop()
+            cleanup_path = output
+
+            def finished(error: Exception | None) -> None:
+                cleanup_path.unlink(missing_ok=True)
+                if error:
+                    loop.call_soon_threadsafe(
+                        logger.error, "Discord TTS sequence playback failed: %s", error
+                    )
+
+            client.play(discord.FFmpegPCMAudio(str(output)), after=finished)
+            output = None
+            await interaction.edit_original_response(
+                content=f"✅ Playing a {len(segments)}-part TTS sequence."
+            )
+        except Exception as exc:
+            logger.exception("TTS sequence generation/playback failed")
+            await interaction.edit_original_response(
+                content=f"❌ Could not play sequence: {exc}"
+            )
+        finally:
+            for path in generated:
+                path.unlink(missing_ok=True)
             if output is not None:
                 output.unlink(missing_ok=True)
 

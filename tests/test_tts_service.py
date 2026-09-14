@@ -32,6 +32,24 @@ def test_combine_samples_normalizes_mixed_audio(tmp_path: Path) -> None:
         assert combined.getnframes() == 4_800
 
 
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg is not installed")
+def test_combine_sequence_inserts_silence(tmp_path: Path) -> None:
+    first = tmp_path / "first.wav"
+    second = tmp_path / "second.wav"
+    output = tmp_path / "sequence.wav"
+    _silent_wav(first, sample_rate=24_000, channels=1, seconds=0.1)
+    _silent_wav(second, sample_rate=24_000, channels=1, seconds=0.1)
+
+    PocketTTSService._combine_sequence_sync(
+        [(first, 1.0), (None, 0.2), (second, 2.0)], output
+    )
+
+    with wave.open(str(output), "rb") as combined:
+        assert combined.getnchannels() == 1
+        assert combined.getframerate() == 24_000
+        assert combined.getnframes() == 9_600
+
+
 @pytest.mark.parametrize(
     ("url", "start", "duration"),
     [

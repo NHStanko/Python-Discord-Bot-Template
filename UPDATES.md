@@ -15,6 +15,7 @@ Here is the most recent update made on this template.
 * Reduced container size with CPU-only PyTorch, a multi-stage build, and a smaller build context
 * Added a persistent button-based volume panel for trained voices
 * Set the default and reset TTS voice volume to 200%, adjustable up to 400%
+* Added multi-voice TTS sequences with timed silence segments
 
 ### Also included
 
