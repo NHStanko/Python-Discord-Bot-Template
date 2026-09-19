@@ -113,6 +113,7 @@ class AIHelper:
                         available_emotes: Optional[List[str]] = None,
                         safety_settings: Optional[List[Dict]] = None,
                         include_thoughts: bool = False,
+                        thinking_level: Optional[str] = None,
                         enable_web_search: bool = False) -> Tuple[Optional[str], Optional[str]]:
         """Generate content using the Gemini API asynchronously.
 
@@ -125,6 +126,7 @@ class AIHelper:
             available_emotes: Optional list of available emotes for chat simulations
             safety_settings: Optional safety settings for content generation
             include_thoughts: Whether to include model thinking in the response
+            thinking_level: Optional model reasoning level (minimal, low, medium, or high)
             enable_web_search: Whether to enable Google search tool for web lookups
 
         Returns:
@@ -197,13 +199,20 @@ class AIHelper:
             ]
             
             # Generate content config
-            generate_content_config = types.GenerateContentConfig(
-                temperature=0.7,
-            )
+            # Gemini 3.x models use thinking levels and no longer recommend
+            # sampling parameters such as temperature.
+            config_kwargs = {}
+            if not self.model.startswith("gemini-3"):
+                config_kwargs["temperature"] = 0.7
+            generate_content_config = types.GenerateContentConfig(**config_kwargs)
             
-            # Set up thinking config if requested
-            if include_thoughts:
-                thinking = types.ThinkingConfig(include_thoughts=include_thoughts)
+            # Set up thinking config if requested. include_thoughts controls
+            # returned thought summaries; thinking_level controls reasoning effort.
+            if include_thoughts or thinking_level:
+                thinking = types.ThinkingConfig(
+                    include_thoughts=include_thoughts,
+                    thinking_level=thinking_level,
+                )
                 generate_content_config.thinking_config = thinking
             
             # Add web search tool if enabled
@@ -215,7 +224,7 @@ class AIHelper:
                 generate_content_config.tools = tools
                 
                 # Web search works best with more recent model versions
-                if not self.model.startswith(("gemini-1.5-pro", "gemini-1.5-flash-latest", "gemini-2")):
+                if not self.model.startswith(("gemini-1.5-pro", "gemini-1.5-flash-latest", "gemini-2", "gemini-3")):
                     self.logger.warning(
                         f"Web search works best with newer models. Current model: {self.model}. "
                         "Consider using gemini-1.5-pro or newer."

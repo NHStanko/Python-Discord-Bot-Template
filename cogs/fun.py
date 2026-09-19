@@ -969,6 +969,7 @@ async def xqc_explains(interaction: discord.Interaction, message: discord.Messag
             prompt=prompt,
             image_path=image_path,
             system_prompt=system_prompt,
+            thinking_level="high",
             enable_web_search=True  # Enable web search for latest information
         )
 
@@ -1426,6 +1427,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
             response_mime_type="application/json",
             response_schema=response_schema,
             available_emotes=available_emotes,
+            thinking_level="high",
         )
 
         if error or not response:
