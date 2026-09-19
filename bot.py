@@ -209,6 +209,7 @@ async def on_voice_state_update(member, before, after) -> None:
         return
     if member.bot:
         return
+    joined_channel = after.channel if before.channel != after.channel else None
     # If bot is already in a voice channel on that guild
     if member.guild.voice_client:
         # If the bot is alone in the voice channel, disconnect
@@ -224,7 +225,11 @@ async def on_voice_state_update(member, before, after) -> None:
         if after.channel:
             await after.channel.connect()
             logger.info(f"Connected to {after.channel} because someone joined it.")
-            return
+
+    if joined_channel:
+        tts_cog = bot.get_cog("tts")
+        if tts_cog:
+            await tts_cog.maybe_play_join_greeting(member, joined_channel)
 
 
 @tasks.loop(minutes=1.0)

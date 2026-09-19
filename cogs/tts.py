@@ -22,6 +22,14 @@ from helpers.voice_store import VoiceStore
 
 logger = logging.getLogger("discord_bot")
 SUPPORTED_AUDIO_SUFFIXES = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".opus", ".webm"}
+BROCK_USER_ID = 157644363227201536
+JOIN_GREETING_CHANCE = 100
+JOIN_GREETING_VOICE = "northernlion"
+JOIN_GREETING_TEXT = "Hi brock, what's up"
+
+
+def should_play_join_greeting(user_id: int) -> bool:
+    return user_id == BROCK_USER_ID and secrets.randbelow(JOIN_GREETING_CHANCE) == 0
 
 
 class VoiceVolumeView(discord.ui.View):
@@ -117,6 +125,48 @@ class TTS(commands.Cog, name="tts"):
         language = os.getenv("POCKET_TTS_LANGUAGE", tts_config.get("language", "english"))
         self.store = VoiceStore(data_dir)
         self.tts = PocketTTSService(self.store, language)
+
+    async def maybe_play_join_greeting(
+        self, member: discord.Member, channel: discord.VoiceChannel
+    ) -> None:
+        if not should_play_join_greeting(member.id):
+            return
+
+        output: Path | None = None
+        try:
+            profile = self.store.get_voice(JOIN_GREETING_VOICE)
+            client = member.guild.voice_client
+            if client is None or client.channel != channel or client.is_playing():
+                return
+
+            output = await self.tts.synthesize(profile.slug, JOIN_GREETING_TEXT)
+            client = member.guild.voice_client
+            if client is None or client.channel != channel or client.is_playing():
+                return
+
+            loop = asyncio.get_running_loop()
+            cleanup_path = output
+
+            def finished(error: Exception | None) -> None:
+                cleanup_path.unlink(missing_ok=True)
+                if error:
+                    loop.call_soon_threadsafe(
+                        logger.error, "Discord join greeting playback failed: %s", error
+                    )
+
+            client.play(
+                discord.FFmpegPCMAudio(
+                    str(output), options=f"-af volume={profile.volume:.2f}"
+                ),
+                after=finished,
+            )
+            output = None
+            logger.info("Played Northernlion join greeting for user %s", member.id)
+        except Exception:
+            logger.exception("Northernlion join greeting generation/playback failed")
+        finally:
+            if output is not None:
+                output.unlink(missing_ok=True)
 
     async def voice_autocomplete(
         self, interaction: discord.Interaction, current: str

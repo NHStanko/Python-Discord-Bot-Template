@@ -16,6 +16,7 @@ Here is the most recent update made on this template.
 * Added a persistent button-based volume panel for trained voices
 * Set the default and reset TTS voice volume to 200%, adjustable up to 400%
 * Added multi-voice TTS sequences with timed `(pause)` segments and random voices
+* Added a 1-in-100 Northernlion TTS greeting when Brock joins a voice channel
 
 ### Also included
 
