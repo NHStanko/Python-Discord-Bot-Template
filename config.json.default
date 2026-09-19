@@ -18,7 +18,6 @@
     "data_dir": "data/tts",
     "language": "english",
     "max_attachment_bytes": 20971520,
-    "max_samples_per_voice": 10,
-    "max_text_length": 1500
+    "max_samples_per_voice": 10
   }
 }

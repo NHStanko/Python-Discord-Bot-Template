@@ -44,7 +44,11 @@ class FakeGeminiFiles:
 
 
 class FakeGeminiModels:
+    def __init__(self) -> None:
+        self.generate_calls: list[dict] = []
+
     def generate_content(self, **kwargs):
+        self.generate_calls.append(kwargs)
         return SimpleNamespace(text="generated text")
 
 
@@ -109,6 +113,22 @@ def test_gemini_uploaded_image_is_deleted_after_generation(
 
     assert asyncio.run(exercise()) == ("generated text", None)
     assert client.files.deleted == ["files/test-image"]
+
+
+def test_gemini_disables_unused_automatic_function_calling(
+    monkeypatch: pytest.MonkeyPatch, immediate_to_thread
+) -> None:
+    client = FakeGeminiClient()
+    monkeypatch.setattr("helpers.ai.genai.Client", lambda *, api_key: client)
+
+    async def exercise() -> tuple[str | None, str | None]:
+        helper = AIHelper(SimpleNamespace(), "key")
+        return await helper.generate_content("look this up", enable_web_search=True)
+
+    assert asyncio.run(exercise()) == ("generated text", None)
+    config = client.models.generate_calls[0]["config"]
+    assert config.automatic_function_calling.disable is True
+    assert config.tools[0].google_search is not None
 
 
 def test_ai_helper_is_cached_per_bot_and_closed(

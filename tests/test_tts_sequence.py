@@ -42,6 +42,9 @@ def test_sequence_rejects_invalid_scripts(script: str) -> None:
         parse_tts_sequence(script)
 
 
-def test_sequence_enforces_total_spoken_text_limit() -> None:
-    with pytest.raises(ValueError):
-        parse_tts_sequence("(one) 12345 (two) 67890", max_text_length=9)
+def test_sequence_does_not_apply_an_application_text_limit() -> None:
+    long_text = "word " * 2_000
+
+    assert parse_tts_sequence(f"(one) {long_text}") == [
+        SpeechSegment("one", long_text.strip())
+    ]

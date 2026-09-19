@@ -30,7 +30,7 @@ BROCK_USER_ID = 157644363227201536
 BROCK_TTS_CHANCE = 100
 BROCK_TTS_VOICE = "northernlion"
 BROCK_TTS_SYSTEM_PROMPT = "brock_game_tts.txt"
-BROCK_GAME_MAX_LENGTH = 200
+BROCK_GAME_PREVIEW_LENGTH = 200
 EPHEMERAL_LIFETIME = 5
 
 
@@ -67,7 +67,7 @@ def load_brock_system_prompt() -> str:
 
 def brock_game_prompt(game: str) -> str:
     """Build a bounded user message containing untrusted game metadata."""
-    normalized_game = " ".join(game.split())[:BROCK_GAME_MAX_LENGTH]
+    normalized_game = " ".join(game.split())
     encoded_game = (
         json.dumps(normalized_game, ensure_ascii=False)
         .replace("<", "\\u003c")
@@ -173,9 +173,6 @@ class TTS(commands.Cog, name="tts"):
             os.getenv(
                 "MAX_SAMPLES_PER_VOICE", tts_config.get("max_samples_per_voice", 10)
             )
-        )
-        self.max_text_length = int(
-            os.getenv("MAX_TTS_TEXT_LENGTH", tts_config.get("max_text_length", 1500))
         )
         language = os.getenv(
             "POCKET_TTS_LANGUAGE", tts_config.get("language", "english")
@@ -342,7 +339,8 @@ class TTS(commands.Cog, name="tts"):
             return
 
         await context.send(
-            f"Generating the `{BROCK_TTS_VOICE}` monologue for `{game[:BROCK_GAME_MAX_LENGTH]}`..."
+            f"Generating the `{BROCK_TTS_VOICE}` monologue for "
+            f"`{game[:BROCK_GAME_PREVIEW_LENGTH]}`..."
         )
         played = await self.play_brock_game_tts(member, member.voice.channel, game)
         if not played:
@@ -461,9 +459,9 @@ class TTS(commands.Cog, name="tts"):
                 delete_after=EPHEMERAL_LIFETIME,
             )
             return
-        if not text.strip() or len(text) > self.max_text_length:
+        if not text.strip():
             await interaction.response.send_message(
-                f"Text must be 1-{self.max_text_length} characters.",
+                "Text cannot be empty.",
                 ephemeral=True,
                 delete_after=EPHEMERAL_LIFETIME,
             )
@@ -540,9 +538,7 @@ class TTS(commands.Cog, name="tts"):
             return
 
         try:
-            segments = parse_tts_sequence(
-                script, max_segments=20, max_text_length=self.max_text_length
-            )
+            segments = parse_tts_sequence(script, max_segments=20)
             random_voices = [
                 profile for profile in self.store.list_voices() if profile.trained
             ]

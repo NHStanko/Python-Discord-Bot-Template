@@ -29,7 +29,6 @@ def parse_tts_sequence(
     script: str,
     *,
     max_segments: int = 20,
-    max_text_length: int = 1500,
     max_silence: float = 30,
 ) -> list[SequenceSegment]:
     matches = list(TAG_PATTERN.finditer(script))
@@ -39,7 +38,6 @@ def parse_tts_sequence(
         raise ValueError(f"A sequence may contain at most {max_segments} segments")
 
     segments: list[SequenceSegment] = []
-    spoken_characters = 0
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(script)
         name = match.group(1).strip()
@@ -60,11 +58,6 @@ def parse_tts_sequence(
 
         if not content:
             raise ValueError(f"Voice `{name}` needs text to speak")
-        spoken_characters += len(content)
-        if spoken_characters > max_text_length:
-            raise ValueError(
-                f"Spoken text must total at most {max_text_length} characters"
-            )
         if normalized_name == "random":
             segments.append(RandomSpeechSegment(content))
         else:

@@ -125,9 +125,9 @@ as a persistent volume when using Docker.
 
 Pocket TTS requires Python 3.10-3.14, FFmpeg, and access to its gated model
 weights. Accept the model terms on Hugging Face, then authenticate with
-`hf auth login` or provide `HF_TOKEN`. Limits can be set in `config.json` or
-overridden with `MAX_VOICE_ATTACHMENT_BYTES`, `MAX_SAMPLES_PER_VOICE`, and
-`MAX_TTS_TEXT_LENGTH`.
+`hf auth login` or provide `HF_TOKEN`. Attachment-size and sample-count limits
+can be set in `config.json` or overridden with `MAX_VOICE_ATTACHMENT_BYTES`
+and `MAX_SAMPLES_PER_VOICE`.
 
 
 ## Built With

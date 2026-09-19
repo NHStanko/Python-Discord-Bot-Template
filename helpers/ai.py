@@ -262,6 +262,13 @@ class AIHelper:
             config_kwargs = {}
             if not self.model.startswith("gemini-3"):
                 config_kwargs["temperature"] = 0.7
+            # This helper only uses server-side tools such as Google Search, not
+            # Python callables that require the SDK's automatic function-calling
+            # loop. Disabling AFC keeps direct one-shot requests supported and
+            # avoids the SDK warning recommending the stateful Chat API.
+            config_kwargs["automatic_function_calling"] = (
+                types.AutomaticFunctionCallingConfig(disable=True)
+            )
             generate_content_config = types.GenerateContentConfig(**config_kwargs)
 
             # Set up thinking config if requested. include_thoughts controls
