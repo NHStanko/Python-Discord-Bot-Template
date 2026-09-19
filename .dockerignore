@@ -16,11 +16,11 @@ env/
 tests/
 data/
 debug/
+emotes/
+sounds/*
+!sounds/airhorn.mp3
 *.log
 *.db
 
 # Runtime configuration must be mounted, never baked into the image.
 config/config.json
-
-package.json
-package-lock.json

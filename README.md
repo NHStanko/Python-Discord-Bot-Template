@@ -24,18 +24,22 @@ Alternatively you can do the following:
 
 ## How to set up
 
-To set up the bot I made it as simple as possible. I now created a [config.json](config.json) file where you can put the
-needed things to edit.
+Copy the example configuration, then edit the new file with your bot settings:
+
+```sh
+mkdir -p config
+cp config.json.default config/config.json
+```
 
 Here is an explanation of what everything is:
 
-| Variable                  | What it is                                                            |
-| ------------------------- | ----------------------------------------------------------------------|
-| YOUR_BOT_PREFIX_HERE      | The prefix you want to use for normal commands                        |
-| YOUR_BOT_TOKEN_HERE       | The token of your bot                                                 |
-| YOUR_BOT_PERMISSIONS_HERE | The permissions integer your bot needs when it gets invited           |
-| YOUR_APPLICATION_ID_HERE  | The application ID of your bot                                        |
-| OWNERS                    | The user ID of all the bot owners                                     |
+| Setting            | What it is                                                   |
+| ------------------ | ------------------------------------------------------------ |
+| `prefix`           | The prefix for normal commands                               |
+| `token`            | The bot token                                                 |
+| `permissions`      | The permissions integer used when inviting the bot           |
+| `application_id`   | The bot application's ID                                      |
+| `owners`           | Discord user IDs allowed to use owner-only commands          |
 
 
 ## How to start
@@ -53,10 +57,40 @@ python -m pip install -r requirements.txt
 After that you can start it with
 
 ```
-python bot.py
+python bot.py --voice
 ```
 
 > **Note** You may need to replace `python` with `py`, `python3`, `python3.11`, etc. depending on what Python versions you have installed on the machine.
+
+For development, install the development requirements, then run the quality checks:
+
+```sh
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+python -m ruff check .
+```
+
+For a foreground deployment, use the bundled runner:
+
+```sh
+./runner.sh
+```
+
+The runner uses `exec` so Docker, systemd, or another supervisor receives the
+bot process directly and can restart it when needed. It no longer performs a
+scheduled daily restart; configure restart policy and log rotation in the
+supervisor instead.
+
+## Prompt resources
+
+Long AI behavior prompts live in `prompts/` rather than in the Python command
+handlers. `helpers/prompts.py` loads and renders those version-controlled files
+independently of the process working directory. Rebuild the Docker image after
+changing a prompt so the updated resource is copied into the container.
+
+Discord messages, activity names, and other runtime values are passed separately
+as untrusted data. Keep response schemas, authorization, and runtime control flow
+in Python rather than adding them to prompt templates.
 
 ## Voice cloning (Pocket TTS)
 
@@ -98,7 +132,7 @@ overridden with `MAX_VOICE_ATTACHMENT_BYTES`, `MAX_SAMPLES_PER_VOICE`, and
 
 ## Built With
 
-* [Python 3.9.12](https://www.python.org/)
+* [Python 3.12](https://www.python.org/)
 
 ## License
 

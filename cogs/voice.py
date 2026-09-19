@@ -1,31 +1,108 @@
+import asyncio
+import logging
 import os
 import random
 import re
 import shutil
+import tempfile
 from pathlib import Path
+from time import perf_counter
 from typing import List
-import logging
+from urllib.parse import urlparse
 
 import discord
 from discord import FFmpegPCMAudio, app_commands
 from discord.ext import commands
 from discord.ext.commands import Context
 from yt_dlp import YoutubeDL
-from helpers import checks, db_manager
 
-from time import perf_counter
+from helpers import checks, db_manager
 
 logger = logging.getLogger("discord_bot")
 
-async def play_sound(guild: discord.Guild, sound: str):
-    if not guild.voice_client:
-        await guild.author.voice.channel.connect()
-    if guild.voice_client.is_playing():
-        guild.voice_client.stop()
+SOUNDS_DIR = Path("./sounds")
+SOUNDS_TEMP_DIR = SOUNDS_DIR / "temp"
+SOUNDS_ORIGINAL_DIR = SOUNDS_DIR / "original"
+YOUTUBE_HOSTS = {
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "music.youtube.com",
+    "youtu.be",
+}
+SOUND_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$")
+
+
+def validate_sound_name(name: str) -> str:
+    """Validate a user-provided sound name before using it as a filename."""
+    if not isinstance(name, str):
+        raise ValueError("Sound names must be text")
+    name = name.strip()
+    if not SOUND_NAME_PATTERN.fullmatch(name):
+        raise ValueError(
+            "Sound names must start with a letter or number and contain only "
+            "letters, numbers, spaces, underscores, hyphens, or periods"
+        )
+    return name
+
+
+def validate_youtube_url(link: str) -> str:
+    """Accept only HTTPS URLs hosted by YouTube."""
+    parsed = urlparse(link.strip())
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if parsed.scheme != "https" or hostname not in YOUTUBE_HOSTS:
+        raise ValueError("Use a valid YouTube or youtu.be URL")
+    return parsed.geturl()
+
+
+def validate_time_range(start: int, duration: int) -> None:
+    """Bound conversion times to avoid unbounded legacy downloads."""
+    if not isinstance(start, int) or start < 0 or start > 86_400:
+        raise ValueError("Start time must be between 0 and 86400 seconds")
+    if not isinstance(duration, int) or not 1 <= duration <= 30:
+        raise ValueError("Duration must be between 1 and 30 seconds")
+
+
+def conversion_ffmpeg_args(
+    source: Path, destination: Path, start: int, duration: int
+) -> list[str]:
+    """Build an argument-vector FFmpeg conversion command."""
+    validate_time_range(start, duration)
+    arguments = ["-y", "-ss", str(start), "-i", str(source)]
+    arguments.extend(["-t", str(duration)])
+    arguments.extend(["-vn", str(destination)])
+    return arguments
+
+
+async def run_ffmpeg(arguments: list[str], timeout: float = 120) -> None:
+    """Run FFmpeg without blocking the event loop or invoking a shell."""
+    process = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        *arguments,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        _, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+    except asyncio.TimeoutError as exc:
+        process.kill()
+        await process.communicate()
+        raise RuntimeError("FFmpeg timed out") from exc
+    if process.returncode:
+        detail = stderr.decode(errors="replace").strip().splitlines()
+        raise RuntimeError(
+            f"FFmpeg failed: {detail[-1] if detail else 'unknown error'}"
+        )
+
+async def play_sound(context: Context, sound: str):
+    if not context.voice_client:
+        await context.author.voice.channel.connect()
+    if context.voice_client.is_playing():
+        context.voice_client.stop()
     start = perf_counter()
     logger.info(f"Playing {sound}")
     
-    guild.voice_client.play(
+    context.voice_client.play(
         FFmpegPCMAudio(executable="ffmpeg", source=f"sounds/{sound}", options="-af volume=0.75")
     )
     
@@ -33,14 +110,12 @@ async def play_sound(guild: discord.Guild, sound: str):
 
 
 def get_sound(dir="./sounds"):
-    sounds = [Path(sound).stem for sound in os.listdir(dir)]
-    return sounds
+    return [path.stem for path in Path(dir).iterdir() if path.is_file()]
 
 
 def get_sound_with_extension(dir: str = "./sounds") -> dict:
     # Filename : basename
-    sounds = {Path(sound).stem: sound for sound in os.listdir(dir)}
-    return sounds
+    return {path.stem: path.name for path in Path(dir).iterdir() if path.is_file()}
 
 
 async def stop_playing(guild: discord.Guild):
@@ -53,6 +128,23 @@ async def stop_playing(guild: discord.Guild):
 class Voice(commands.Cog, name="voice"):
     def __init__(self, bot):
         self.bot = bot
+
+    async def require_sound_manager(self, context: Context) -> bool:
+        """Allow bot owners or moderators to mutate the sound library."""
+        permissions = getattr(context.author, "guild_permissions", None)
+        can_manage = bool(getattr(permissions, "manage_messages", False))
+        configured_owners = self.bot.config.get("owners", [])
+        is_owner = context.author.id in configured_owners or await self.bot.is_owner(
+            context.author
+        )
+        if can_manage or is_owner:
+            return True
+        await context.send(
+            "You do not have permission to manage sounds.",
+            ephemeral=True,
+            delete_after=5,
+        )
+        return False
 
     async def play_autocomplete(
         self,
@@ -94,7 +186,11 @@ class Voice(commands.Cog, name="voice"):
         :param context: The application command context.
         :param query: The query to search for.
         """
-        # Do your stuff here
+        try:
+            sound = validate_sound_name(sound)
+        except ValueError:
+            await context.send("That sound name is invalid.", ephemeral=True)
+            return
 
         # Don't forget to remove "pass", I added this just because there's no
         # content in the method.
@@ -236,9 +332,8 @@ class Voice(commands.Cog, name="voice"):
             top_plays = await db_manager.get_leaderboard(user.id)
 
         if len(top_plays) == 0:
-            await context.send(
-                f"User {user.display_name} has not played any sounds yet.",
-            )
+            subject = f"User {user.display_name}" if user else "Nobody"
+            await context.send(f"{subject} has not played any sounds yet.")
             return
 
         embed = discord.Embed(
@@ -298,7 +393,21 @@ class Voice(commands.Cog, name="voice"):
         Args:
             context (Context): discord.py context object
         """
+        if not context.author.voice:
+            await context.send(
+                "You are not connected to a voice channel.", ephemeral=True
+            )
+            return
+        if context.voice_client and context.author.voice.channel != context.voice_client.channel:
+            await context.send(
+                "You are not connected to my voice channel.", ephemeral=True
+            )
+            return
+
         sounds = get_sound_with_extension()
+        if not sounds:
+            await context.send("No sounds are available.", ephemeral=True)
+            return
         sound = random.choice(list(sounds.keys()))
         await play_sound(context, sounds[sound])
         await context.send(f"Playing {sound}.", ephemeral=True, delete_after=3)
@@ -315,13 +424,13 @@ class Voice(commands.Cog, name="voice"):
             sound (str): sound to delete
         """
 
-        # Check if the user has the permissions to delete messages
-        if not context.author.guild_permissions.manage_messages:
-            await context.send(
-                "You do not have the permissions to delete sounds.",
-                ephemeral=True,
-                delete_after=5,
-            )
+        if not await self.require_sound_manager(context):
+            return
+
+        try:
+            sound = validate_sound_name(sound)
+        except ValueError:
+            await context.send("That sound name is invalid.", ephemeral=True)
             return
 
         sounds = get_sound_with_extension()
@@ -347,13 +456,13 @@ class Voice(commands.Cog, name="voice"):
             sound (str): sound to restore
         """
 
-        # Check if the user has the permissions to delete messages
-        if not context.author.guild_permissions.manage_messages:
-            await context.send(
-                "You do not have the permissions to restore sounds.",
-                ephemeral=True,
-                delete_after=5,
-            )
+        if not await self.require_sound_manager(context):
+            return
+
+        try:
+            sound = validate_sound_name(sound)
+        except ValueError:
+            await context.send("That sound name is invalid.", ephemeral=True)
             return
 
         sounds = get_sound_with_extension("./sounds/original/")
@@ -394,7 +503,7 @@ class Voice(commands.Cog, name="voice"):
         name: str,
         *,
         start: int = 0,
-        duration: int = -1,
+        duration: int = 30,
     ):
         """Adds a sound from youtube.
 
@@ -403,8 +512,18 @@ class Voice(commands.Cog, name="voice"):
             link (str): link to the youtube video
             name (str): name that the sound will have
             start (int, optional): start time for the video. Defaults to 0.
-            duration (int, optional): duration of the sound. Defaults to -1.
+            duration (int, optional): duration of the sound. Defaults to 30.
         """
+
+        if not await self.require_sound_manager(context):
+            return
+        try:
+            name = validate_sound_name(name)
+            link = validate_youtube_url(link)
+            validate_time_range(start, duration)
+        except ValueError as exc:
+            await context.send(str(exc), ephemeral=True, delete_after=5)
+            return
 
         # Check if the sound already exists
         if name in get_sound():
@@ -413,20 +532,62 @@ class Voice(commands.Cog, name="voice"):
             )
             return
 
-        # Clear the temp folder
-        for file in os.listdir("./sounds/temp"):
-            os.remove(f"./sounds/temp/{file}")
-
-        configs = {
-            "format": "bestaudio/best",
-            "outtmpl": f"./sounds/temp/temp.%(ext)s",
-        }
-
-        await context.send(f"Downloading the video", ephemeral=True, delete_after=3)
-        # Download the video
         try:
-            with YoutubeDL(configs) as ydl:
-                ydl.download([link])
+            SOUNDS_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+            SOUNDS_DIR.mkdir(parents=True, exist_ok=True)
+            SOUNDS_ORIGINAL_DIR.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(
+                dir=SOUNDS_TEMP_DIR, prefix="youtube-"
+            ) as temp_dir:
+                temp_path = Path(temp_dir)
+                configs = {
+                    "format": "bestaudio/best",
+                    "outtmpl": str(temp_path / "source.%(ext)s"),
+                    "noplaylist": True,
+                    "max_downloads": 1,
+                    "max_filesize": 50 * 1024 * 1024,
+                    "playlistend": 1,
+                    "retries": 2,
+                    "socket_timeout": 30,
+                }
+
+                await context.send(
+                    "Downloading the video", ephemeral=True, delete_after=3
+                )
+
+                def download() -> None:
+                    with YoutubeDL(configs) as ydl:
+                        ydl.download([link])
+
+                await asyncio.to_thread(download)
+                candidates = [
+                    path
+                    for path in temp_path.iterdir()
+                    if path.is_file() and path.name.startswith("source.")
+                ]
+                if len(candidates) != 1:
+                    raise ValueError("The download did not produce one audio file")
+                source = candidates[0]
+                destination = temp_path / "converted.mp3"
+
+                await context.send(
+                    "Converting the video", ephemeral=True, delete_after=3
+                )
+                await run_ffmpeg(
+                    conversion_ffmpeg_args(source, destination, start, duration)
+                )
+                if not destination.is_file():
+                    raise RuntimeError("FFmpeg did not produce an output file")
+                await asyncio.gather(
+                    asyncio.to_thread(
+                        shutil.copyfile, destination, SOUNDS_DIR / f"{name}.mp3"
+                    ),
+                    asyncio.to_thread(
+                        shutil.copyfile,
+                        destination,
+                        SOUNDS_ORIGINAL_DIR / f"{name}.mp3",
+                    ),
+                )
         except Exception as e:
             await context.send(
                 f"Something went wrong while downloading the video: {e}",
@@ -434,18 +595,6 @@ class Voice(commands.Cog, name="voice"):
                 delete_after=5,
             )
             return
-
-        await context.send(f"Converting the video", ephemeral=True, delete_after=3)
-
-        extension = re.search(r"\.(\w+)$", os.listdir("./sounds/temp")[0]).group(1)
-
-        output = os.system(
-            f"ffmpeg -ss {start} -i ./sounds/temp/temp.{extension} {f'-t {duration}' if duration!=-1 else ''} -vn ./sounds/temp/{name}.mp3"
-        )
-
-        # Copy to original and sounds
-        shutil.copy(f"./sounds/temp/{name}.mp3", f"./sounds/{name}.mp3")
-        shutil.copy(f"./sounds/temp/{name}.mp3", f"./sounds/original/{name}.mp3")
 
         await context.send(
             f"Added {name}, use /play {name}", ephemeral=True, delete_after=30
@@ -472,7 +621,14 @@ class Voice(commands.Cog, name="voice"):
     @app_commands.autocomplete(sound=play_autocomplete)
     async def modify_volume(self, context: Context, *, sound: str):
         """TBD"""
-        
+        if not await self.require_sound_manager(context):
+            return
+        try:
+            sound = validate_sound_name(sound)
+        except ValueError:
+            await context.send("That sound name is invalid.", ephemeral=True)
+            return
+
         # Create the view
 
         # Send the message
@@ -482,26 +638,59 @@ class Voice(commands.Cog, name="voice"):
                 "This sound does not exist.", ephemeral=True, delete_after=10
             )
             return
-        view = SoundModifyView(sound)
+        view = SoundModifyView(sound, context.author.id)
         await context.send(f"Modifying `{sound}`", view=view)
         
     
         
 class SoundModifyView(discord.ui.View):
-    def __init__(self, sound: str):
+    def __init__(self, sound: str, authorized_user_id: int):
         super().__init__()
-        self.sound = sound
-        self.sound_ext = get_sound_with_extension()[sound]
+        self.sound = validate_sound_name(sound)
+        self.authorized_user_id = authorized_user_id
+        self.sound_ext = get_sound_with_extension()[self.sound]
         # Set the title of the view
         self.title = f"Modifying {self.sound}"
         
         # Check if the sound exists in the original folder
         originals = get_sound(dir="./sounds/original")
-        if not self.sound in originals:
+        if self.sound not in originals:
             # Copy from sounds to sounds/original
             # Find the full name of the sound with the extension
             sounds = get_sound_with_extension(dir="./sounds")
             shutil.copy(f"./sounds/{sounds[self.sound]}", f"./sounds/original/{sounds[self.sound]}")
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.authorized_user_id:
+            return True
+        await interaction.response.send_message(
+            "Only the user who opened this sound editor can use it.",
+            ephemeral=True,
+        )
+        return False
+
+    async def _apply_volume(self, factor: float) -> None:
+        source = SOUNDS_DIR / self.sound_ext
+        SOUNDS_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+        handle = tempfile.NamedTemporaryFile(
+            suffix=source.suffix, dir=SOUNDS_TEMP_DIR, delete=False
+        )
+        destination = Path(handle.name)
+        handle.close()
+        try:
+            await run_ffmpeg(
+                [
+                    "-y",
+                    "-i",
+                    str(source),
+                    "-af",
+                    f"volume={factor}",
+                    str(destination),
+                ]
+            )
+            await asyncio.to_thread(shutil.copyfile, destination, source)
+        finally:
+            destination.unlink(missing_ok=True)
         
     
 
@@ -509,18 +698,14 @@ class SoundModifyView(discord.ui.View):
     @discord.ui.button(label="Vol Down", style=discord.ButtonStyle.gray)
     async def vol_down(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Modify and save to a temp file
-        output = os.system(f"ffmpeg -i ./sounds/{self.sound_ext} -af volume=0.8 ./sounds/temp/{self.sound_ext} -y")
-        # Copy from temp to sounds
-        shutil.copy(f"./sounds/temp/{self.sound_ext}", f"./sounds/{self.sound_ext}")
+        await self._apply_volume(0.8)
         await interaction.response.send_message(f"`{self.sound}` decreased 20%", ephemeral=True, delete_after=5)
 
     @discord.ui.button(label="Vol Up", style=discord.ButtonStyle.gray)
     async def vol_up(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Send a response with the button label
         # Modify and save to a temp file
-        output = os.system(f"ffmpeg -i ./sounds/{self.sound_ext} -af volume=1.2 ./sounds/temp/{self.sound_ext} -y")
-        # Copy from temp to sounds
-        shutil.copy(f"./sounds/temp/{self.sound_ext}", f"./sounds/{self.sound_ext}")
+        await self._apply_volume(1.2)
         await interaction.response.send_message(f"`{self.sound}` increased 20%", ephemeral=True, delete_after=5)
         
     # @discord.ui.button(label="Play", style=discord.ButtonStyle.blurple)
@@ -556,7 +741,11 @@ class SoundModifyView(discord.ui.View):
         # Send a response with the button label
         # copy from sounds/original to sounds
         sounds = get_sound_with_extension(dir="./sounds")
-        shutil.copy(f"./sounds/original/{sounds[self.sound]}", f"./sounds/{sounds[self.sound]}")
+        await asyncio.to_thread(
+            shutil.copyfile,
+            SOUNDS_ORIGINAL_DIR / sounds[self.sound],
+            SOUNDS_DIR / sounds[self.sound],
+        )
         await interaction.message.edit(view=None, content=f'`{self.sound}` has been reset.')
         
     @discord.ui.button(label="Confirm", style=discord.ButtonStyle.green)

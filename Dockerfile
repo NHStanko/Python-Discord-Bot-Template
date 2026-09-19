@@ -14,7 +14,7 @@ RUN apt-get update \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY requirements.txt /app/requirements.txt
+COPY requirements.txt requirements-base.txt /app/
 RUN python -m pip install --no-cache-dir \
         wheel \
     && python -m pip install --no-cache-dir \

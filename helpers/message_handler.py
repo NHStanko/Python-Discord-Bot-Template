@@ -1,7 +1,15 @@
 import re
-from typing import Callable, Pattern, Any, List, Optional
+from typing import Any, Callable, List, Optional, Pattern
+
 from discord import Message
-import discord.utils
+
+DOLLAR_AMOUNT_MESSAGE = re.compile(r"^\$\s*\d")
+
+
+def is_dollar_amount_message(content: str) -> bool:
+    """Return whether a message starts like a dollar-denominated amount."""
+    return DOLLAR_AMOUNT_MESSAGE.match(content) is not None
+
 
 class MessageHandler:
     def __init__(
@@ -9,7 +17,7 @@ class MessageHandler:
         func: Callable[[Message], Any],
         user_ids: Optional[List[int]] = None,
         username_pattern: Optional[Pattern] = None,
-        content_pattern: Optional[Pattern] = None
+        content_pattern: Optional[Pattern] = None,
     ):
         self.func = func
         self.user_ids = user_ids
@@ -19,22 +27,24 @@ class MessageHandler:
     def matches(self, message: Message) -> bool:
         if self.user_ids and message.author.id not in self.user_ids:
             return False
-        if self.username_pattern and not self.username_pattern.search(message.author.name):
+        if self.username_pattern and not self.username_pattern.search(
+            message.author.name
+        ):
             return False
         if self.content_pattern and not self.content_pattern.search(message.content):
             return False
         return True
 
+
 # Registry of all handlers\
 _registry: List[MessageHandler] = []
-
 
 
 def register_message_handler(
     *,
     user_ids: Optional[List[int]] = None,
     username_regex: Optional[str] = None,
-    content_regex: Optional[str] = None
+    content_regex: Optional[str] = None,
 ) -> Callable:
     """
     Decorator to register a message handler with optional filters:
@@ -42,12 +52,14 @@ def register_message_handler(
       - username_regex: regex string to match author.name
       - content_regex: regex string to match message.content
     """
+
     def decorator(func: Callable[[Message], Any]) -> Callable[[Message], Any]:
         uname_pat = re.compile(username_regex) if username_regex else None
         cont_pat = re.compile(content_regex) if content_regex else None
         handler = MessageHandler(func, user_ids, uname_pat, cont_pat)
         _registry.append(handler)
         return func
+
     return decorator
 
 
@@ -58,5 +70,3 @@ async def process_message(message: Message) -> None:
     for handler in _registry:
         if handler.matches(message):
             await handler.func(message)
-            
-            

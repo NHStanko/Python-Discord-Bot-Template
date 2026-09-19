@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 import re
-import json
 import time
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -579,7 +580,7 @@ def main():
     manual_ffz_emotes = process_manual_ffz_emotes(folder)
     if manual_ffz_emotes:
         if args.subscriber:
-            if not channel_id in emotes_data["subscriber_emotes"]:
+            if channel_id not in emotes_data["subscriber_emotes"]:
                 emotes_data["subscriber_emotes"][channel_id] = {}
             if "ffz" not in emotes_data["subscriber_emotes"][channel_id]:
                 emotes_data["subscriber_emotes"][channel_id]["ffz"] = {}
@@ -594,7 +595,7 @@ def main():
     manual_7tv_emotes = process_manual_seventv_emotes(folder)
     if manual_7tv_emotes:
         if args.subscriber:
-            if not channel_id in emotes_data["subscriber_emotes"]:
+            if channel_id not in emotes_data["subscriber_emotes"]:
                 emotes_data["subscriber_emotes"][channel_id] = {}
             if "7tv" not in emotes_data["subscriber_emotes"][channel_id]:
                 emotes_data["subscriber_emotes"][channel_id]["7tv"] = {}
@@ -613,7 +614,7 @@ def main():
             twitch_emotes, soup = scrape_twitch_emotes(url_path, folder, subscriber=args.subscriber)
             if args.subscriber:
                 badges_mapping = scrape_twitch_loyalty_badges(soup, folder, channel_id)
-                if not channel_id in emotes_data["subscriber_emotes"]:
+                if channel_id not in emotes_data["subscriber_emotes"]:
                     emotes_data["subscriber_emotes"][channel_id] = {}
                 emotes_data["subscriber_emotes"][channel_id]["twitch"] = twitch_emotes
                 emotes_data["subscriber_emotes"][channel_id]["loyalty_badges"] = badges_mapping
@@ -623,7 +624,7 @@ def main():
         if args.provider in ["bttv", "all"]:
             bttv_emotes = scrape_bttv_emotes(channel_id, folder)
             if args.subscriber:
-                if not channel_id in emotes_data["subscriber_emotes"]:
+                if channel_id not in emotes_data["subscriber_emotes"]:
                     emotes_data["subscriber_emotes"][channel_id] = {}
                 emotes_data["subscriber_emotes"][channel_id]["bttv"] = bttv_emotes
             else:
@@ -632,7 +633,7 @@ def main():
         if args.provider in ["7tv", "all"]:
             seventv_emotes = scrape_seventv_emotes(channel_id, folder)
             if args.subscriber:
-                if not channel_id in emotes_data["subscriber_emotes"]:
+                if channel_id not in emotes_data["subscriber_emotes"]:
                     emotes_data["subscriber_emotes"][channel_id] = {}
                 emotes_data["subscriber_emotes"][channel_id]["7tv"] = seventv_emotes
             else:
@@ -641,7 +642,7 @@ def main():
         if args.provider in ["ffz", "all"]:
             ffz_emotes = scrape_ffz_emotes(channel_id, folder)
             if args.subscriber:
-                if not channel_id in emotes_data["subscriber_emotes"]:
+                if channel_id not in emotes_data["subscriber_emotes"]:
                     emotes_data["subscriber_emotes"][channel_id] = {}
                 if "ffz" not in emotes_data["subscriber_emotes"][channel_id]:
                     emotes_data["subscriber_emotes"][channel_id]["ffz"] = {}

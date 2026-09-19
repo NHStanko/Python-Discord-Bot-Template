@@ -1,6 +1,75 @@
+import asyncio
+import html
+import logging
 
 import asyncpraw
-import html
+
+logger = logging.getLogger("discord_bot")
+
+_REDDIT_CLIENT_ATTRIBUTE = "_reddit_client"
+_REDDIT_CONFIG_ATTRIBUTE = "_reddit_client_config"
+_REDDIT_LOCK_ATTRIBUTE = "_reddit_client_lock"
+
+
+async def _close_client(client) -> None:
+    if client is None:
+        return
+    try:
+        await client.close()
+    except Exception as exc:
+        logger.warning("Failed to close Reddit client: %s", exc)
+
+
+async def close_reddit_client(bot) -> None:
+    """Close the cached AsyncPRAW client attached to a bot, if any."""
+    lock = getattr(bot, _REDDIT_LOCK_ATTRIBUTE, None)
+    if lock is None:
+        lock = asyncio.Lock()
+        setattr(bot, _REDDIT_LOCK_ATTRIBUTE, lock)
+    async with lock:
+        client = getattr(bot, _REDDIT_CLIENT_ATTRIBUTE, None)
+        setattr(bot, _REDDIT_CLIENT_ATTRIBUTE, None)
+        setattr(bot, _REDDIT_CONFIG_ATTRIBUTE, None)
+        await _close_client(client)
+
+
+async def _get_reddit_client(bot):
+    client_id = bot.config.get("reddit_client_id")
+    client_secret = bot.config.get("reddit_client_secret") or None
+    user_agent = bot.config.get("reddit_user_agent")
+    config_key = (client_id, client_secret, user_agent)
+
+    lock = getattr(bot, _REDDIT_LOCK_ATTRIBUTE, None)
+    if lock is None:
+        lock = asyncio.Lock()
+        setattr(bot, _REDDIT_LOCK_ATTRIBUTE, lock)
+    async with lock:
+        client = getattr(bot, _REDDIT_CLIENT_ATTRIBUTE, None)
+        if (
+            client is not None
+            and getattr(bot, _REDDIT_CONFIG_ATTRIBUTE, None) == config_key
+        ):
+            return client
+
+        if client is not None:
+            setattr(bot, _REDDIT_CLIENT_ATTRIBUTE, None)
+            setattr(bot, _REDDIT_CONFIG_ATTRIBUTE, None)
+            await _close_client(client)
+
+        try:
+            client = asyncpraw.Reddit(
+                client_id=client_id,
+                client_secret=client_secret,
+                user_agent=user_agent,
+            )
+        except Exception as exc:
+            logger.warning("Failed to initialize Reddit client: %s", exc)
+            return None
+
+        setattr(bot, _REDDIT_CLIENT_ATTRIBUTE, client)
+        setattr(bot, _REDDIT_CONFIG_ATTRIBUTE, config_key)
+        return client
+
 
 async def get_reddit_post(url: str, bot):
     """
@@ -11,35 +80,27 @@ async def get_reddit_post(url: str, bot):
     :return: A tuple containing the post content and image URL, or None.
     """
     if not bot.config.get("reddit_api_enabled", False):
-        print("[DEBUG] Reddit API is disabled in config")
+        logger.debug("Reddit API is disabled in config")
         return None
 
-    try:
-        client_secret = bot.config.get("reddit_client_secret")
-        if not client_secret:
-            client_secret = None  # Required for installed applications
-        
-        reddit = asyncpraw.Reddit(
-            client_id=bot.config["reddit_client_id"],
-            client_secret=client_secret,
-            user_agent=bot.config["reddit_user_agent"],
-        )
-    except Exception as e:
-        print(f"[DEBUG] Failed to initialize Reddit client: {e}")
+    reddit = await _get_reddit_client(bot)
+    if reddit is None:
         return None
 
     try:
         submission = await reddit.submission(url=url)
         await submission.load()
     except Exception as e:
-        print(f"[DEBUG] Failed to get reddit post: {e}")
+        logger.warning("Failed to load Reddit post: %s", e)
         return None
 
     image_url = None
 
     # 1) Direct image link on the post itself
     try:
-        if isinstance(submission.url, str) and submission.url.lower().endswith((".jpg", ".jpeg", ".png", ".gif", ".webp")):
+        if isinstance(submission.url, str) and submission.url.lower().endswith(
+            (".jpg", ".jpeg", ".png", ".gif", ".webp")
+        ):
             image_url = submission.url
     except Exception:
         pass
@@ -66,7 +127,7 @@ async def get_reddit_post(url: str, bot):
                         image_url = html.unescape(candidate)
                         break
         except Exception as e:
-            print(f"[DEBUG] Error getting gallery image via media_metadata: {e}")
+            logger.debug("Could not read Reddit gallery metadata: %s", e)
 
     # 3) Preview images for single-image posts
     if image_url is None and getattr(submission, "preview", None):
@@ -83,14 +144,22 @@ async def get_reddit_post(url: str, bot):
                 if candidate:
                     image_url = html.unescape(candidate)
         except Exception as e:
-            print(f"[DEBUG] Error getting preview image: {e}")
+            logger.debug("Could not read Reddit preview image: %s", e)
 
     # 4) Known direct hosters even if missing extension (rare)
-    if image_url is None and isinstance(submission.url, str) and ("i.redd.it" in submission.url or "i.imgur.com" in submission.url):
+    if (
+        image_url is None
+        and isinstance(submission.url, str)
+        and ("i.redd.it" in submission.url or "i.imgur.com" in submission.url)
+    ):
         image_url = submission.url
 
     # 5) Thumbnail as last resort (avoid default/self which are logos/placeholders)
-    if image_url is None and submission.thumbnail and submission.thumbnail not in {"self", "default", "nsfw", "spoiler"}:
+    if (
+        image_url is None
+        and submission.thumbnail
+        and submission.thumbnail not in {"self", "default", "nsfw", "spoiler"}
+    ):
         image_url = submission.thumbnail
 
     # Create comprehensive content including title and text
@@ -99,27 +168,22 @@ async def get_reddit_post(url: str, bot):
         content_parts.append(f"Title: {submission.title}")
     if submission.selftext:
         content_parts.append(f"Content: {submission.selftext}")
-    
+
     # Add metadata
     metadata = f"Posted in r/{submission.subreddit.display_name}"
-    if hasattr(submission.author, 'name') and submission.author.name:
+    if hasattr(submission.author, "name") and submission.author.name:
         metadata += f" by u/{submission.author.name}"
-    metadata += f" with {submission.score} upvotes and {submission.num_comments} comments"
+    metadata += (
+        f" with {submission.score} upvotes and {submission.num_comments} comments"
+    )
     content_parts.append(metadata)
-    
+
     content = "\n\n".join(content_parts)
 
-    print(f"[DEBUG] Reddit Post Details:")
-    print(f"  Title: {submission.title}")
-    print(f"  Subreddit: r/{submission.subreddit.display_name}")
-    print(f"  Author: u/{submission.author.name}")
-    print(f"  Score: {submission.score}")
-    print(f"  Comments: {submission.num_comments}")
-    print(f"  Submission URL: {submission.url}")
-    print(f"  Thumbnail: {submission.thumbnail}")
-    print(f"  Has preview: {hasattr(submission, 'preview') and submission.preview}")
-    print(f"  Has gallery: {hasattr(submission, 'gallery_data') and submission.gallery_data}")
-    print(f"  Final Image URL: {image_url}")
-    print(f"  Content length: {len(content)}")
+    logger.debug(
+        "Loaded Reddit post metadata (content=%s characters, image=%s)",
+        len(content),
+        image_url is not None,
+    )
 
     return content, image_url

@@ -1,4 +1,4 @@
-""""
+"""
 Copyright © Krypton 2019-2023 - https://github.com/kkrypt0nn (https://krypton.ninja)
 Description:
 🐍 A simple template to start to code your own and personalized discord bot in Python programming language.
@@ -6,13 +6,11 @@ Description:
 Version: 5.5.0
 """
 
-import json
-import os
 from typing import Callable, TypeVar
 
 from discord.ext import commands
 
-from exceptions import *
+from exceptions import GamblingDisabled, UserBlacklisted, UserNotOwner
 from helpers import db_manager
 
 T = TypeVar("T")
@@ -24,12 +22,10 @@ def is_owner() -> Callable[[T], T]:
     """
 
     async def predicate(context: commands.Context) -> bool:
-        with open(
-            f"{os.path.realpath(os.path.dirname(__file__))}/../config/config.json"
-        ) as file:
-            data = json.load(file)
-
-        if context.author.id not in data["owners"]:
+        owners = {int(owner) for owner in context.bot.config.get("owners", [])}
+        if context.author.id not in owners and not await context.bot.is_owner(
+            context.author
+        ):
             raise UserNotOwner
         return True
 
@@ -55,12 +51,7 @@ def gambling_enabled() -> Callable[[T], T]:
     """
 
     async def predicate(context: commands.Context) -> bool:
-        with open(
-            f"{os.path.realpath(os.path.dirname(__file__))}/../config/config.json"
-        ) as file:
-            data = json.load(file)
-
-        if not data["gambling"]:
+        if not context.bot.config.get("gambling", False):
             raise GamblingDisabled
         return True
 

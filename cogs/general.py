@@ -1,4 +1,4 @@
-""""
+"""
 Copyright © Krypton 2019-2023 - https://github.com/kkrypt0nn (https://krypton.ninja)
 Description:
 🐍 A simple template to start to code your own and personalized discord bot in Python programming language.
@@ -9,7 +9,6 @@ Version: 5.5.0
 import platform
 import random
 
-import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands

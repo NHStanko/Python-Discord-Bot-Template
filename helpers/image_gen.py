@@ -1,9 +1,11 @@
-import os
-import re
 import hashlib
-import tempfile
+import os
 import random
+import re
+import tempfile
+
 from PIL import Image, ImageDraw, ImageFont
+
 
 def get_rainbow_color(username):
     """

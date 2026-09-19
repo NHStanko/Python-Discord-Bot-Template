@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 VOICE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 
 

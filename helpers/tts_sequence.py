@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-
 TAG_PATTERN = re.compile(r"\(([^()\n]{1,32})\)")
 
 

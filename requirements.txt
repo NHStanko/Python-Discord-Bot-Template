@@ -1,12 +1,4 @@
-aiohttp
-aiosqlite
-discord.py[voice] @ git+https://github.com/Rapptz/discord.py@v2.7.1
-davey==0.1.4
-PyNaCl
-yt-dlp
-google-genai>=2.0.0
-pillow
-beautifulsoup4
-asyncpraw
+-r requirements-base.txt
+
 pocket-tts==3.1.0
 scipy>=1.10

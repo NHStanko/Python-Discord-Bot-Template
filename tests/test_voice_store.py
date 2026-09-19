@@ -1,5 +1,5 @@
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -50,7 +50,7 @@ def test_remove_one_sample_marks_voice_for_retrain(tmp_path: Path) -> None:
 def test_duplicate_and_invalid_names_are_rejected(tmp_path: Path) -> None:
     store = VoiceStore(tmp_path)
     store.create_voice("valid", created_by=1)
-    with pytest.raises(Exception):
+    with pytest.raises(FileExistsError):
         store.create_voice("valid", created_by=2)
     with pytest.raises(ValueError):
         store.create_voice("../escape", created_by=1)

@@ -1,4 +1,4 @@
-""""
+"""
 Copyright © Krypton 2019-2023 - https://github.com/kkrypt0nn (https://krypton.ninja)
 Description:
 🐍 A simple template to start to code your own and personalized discord bot in Python programming language.
@@ -6,17 +6,17 @@ Description:
 Version: 5.5.0
 """
 
+import asyncio
+import logging
+import sys
+from pathlib import Path
+
 import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ext.commands import Context
-import time
-import os
-import subprocess
-import logging
-from pathlib import Path
 
-from helpers import checks, db_manager
+from helpers import checks
 
 
 class Owner(commands.Cog, name="owner"):
@@ -190,8 +190,6 @@ class Owner(commands.Cog, name="owner"):
         embed = discord.Embed(description="Shutting down. Bye! :wave:", color=0x9C84EF)
         await context.send(embed=embed)
         await self.bot.close()
-        await time.sleep(1)
-        await self.bot.login(self.bot.config["token"])
         
 
     @commands.hybrid_command(
@@ -244,21 +242,21 @@ class Owner(commands.Cog, name="owner"):
         await context.send(embed=embed)
         
         try:
-            # Navigate to the emotes directory
-            current_dir = os.getcwd()
-            emotes_dir = os.path.join(current_dir, "emotes")
-            
-            # Run the emote scraper script and capture output
-            process = subprocess.Popen(
-                ["python", "emote_scraper.py"], 
-                cwd=emotes_dir,
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.PIPE,
-                text=True
+            repo_dir = Path(__file__).resolve().parents[1]
+            scraper = repo_dir / "emote_scraper.py"
+
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                str(scraper),
+                cwd=repo_dir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            
-            stdout, stderr = process.communicate()
-            
+
+            stdout_bytes, stderr_bytes = await process.communicate()
+            stdout = stdout_bytes.decode(errors="replace")
+            stderr = stderr_bytes.decode(errors="replace")
+
             # Log the output instead of sending it
             logger = logging.getLogger('discord')
             logger.info("Emote sync stdout: %s", stdout)

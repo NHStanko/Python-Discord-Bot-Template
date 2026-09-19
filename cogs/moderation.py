@@ -1,4 +1,4 @@
-""""
+"""
 Copyright © Krypton 2019-2023 - https://github.com/kkrypt0nn (https://krypton.ninja)
 Description:
 🐍 A simple template to start to code your own and personalized discord bot in Python programming language.
@@ -11,7 +11,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ext.commands import Context
 
-from helpers import checks, db_manager
+from helpers import checks
 
 
 class Moderation(commands.Cog, name="moderation"):

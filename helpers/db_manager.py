@@ -1,4 +1,4 @@
-""""
+"""
 Copyright © Krypton 2019-2023 - https://github.com/kkrypt0nn (https://krypton.ninja)
 Description:
 🐍 A simple template to start to code your own and personalized discord bot in Python programming language.
@@ -9,7 +9,6 @@ Version: 5.5.0
 import os
 
 import aiosqlite
-import logging
 
 DATABASE_PATH = f"{os.path.realpath(os.path.dirname(__file__))}/../database/database.db"
 
@@ -171,8 +170,6 @@ async def add_play(user_id: int, song: str) -> int:
         );
 
     """
-    
-    logger = logging.getLogger("discord_bot")
     
     async with aiosqlite.connect(DATABASE_PATH) as db:
         # Check if the song has already been played by the user

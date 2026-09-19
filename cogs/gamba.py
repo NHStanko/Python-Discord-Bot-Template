@@ -1,8 +1,15 @@
 import random
+
+from discord import Embed, User
 from discord.ext import commands
+
 from helpers import checks
-from discord import User, Embed
-from helpers.db_manager import get_user_info, play_result, update_user_info, update_user_money
+from helpers.db_manager import (
+    get_user_info,
+    play_result,
+    update_user_money,
+)
+
 
 class Gamba(commands.Cog):
     def __init__(self, bot):
@@ -58,7 +65,6 @@ class Gamba(commands.Cog):
         if user is None:
             user = ctx.author
         user_info = await get_user_info(user.id)
-        net = user_info["total_gain"] + user_info["total_loss"]
         # infinite ratio
         ratio = (user_info["total_gain"] / (user_info["total_loss"]*-1))*100 if user_info["total_loss"] != 0 else "N/A"
         plays = user_info["plays"]
