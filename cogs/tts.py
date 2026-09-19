@@ -267,11 +267,7 @@ class TTS(commands.Cog, name="tts"):
                     logger.info("Brock game TTS skipped: Brock left the voice channel")
                     return False
 
-                client = member.guild.voice_client
-                if client is None:
-                    client = await channel.connect()
-                elif client.channel != channel:
-                    await client.move_to(channel)
+                client = await self.bot.voice_connection_manager.connect(channel)
                 if client.is_playing():
                     logger.info("Brock game TTS skipped: the bot is already speaking")
                     return False
@@ -473,11 +469,7 @@ class TTS(commands.Cog, name="tts"):
             profile = self.store.get_voice(voice)
             output = await self.tts.synthesize(voice, text.strip())
             channel = member.voice.channel
-            client = interaction.guild.voice_client
-            if client is None:
-                client = await channel.connect()
-            elif client.channel != channel:
-                await client.move_to(channel)
+            client = await self.bot.voice_connection_manager.connect(channel)
             if client.is_playing():
                 raise RuntimeError("The bot is already speaking; try again in a moment")
 
@@ -599,11 +591,7 @@ class TTS(commands.Cog, name="tts"):
             output = await self.tts.combine_sequence(parts)
 
             channel = member.voice.channel
-            client = interaction.guild.voice_client
-            if client is None:
-                client = await channel.connect()
-            elif client.channel != channel:
-                await client.move_to(channel)
+            client = await self.bot.voice_connection_manager.connect(channel)
             if client.is_playing():
                 raise RuntimeError("The bot started playing something else; try again")
 

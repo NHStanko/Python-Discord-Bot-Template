@@ -96,7 +96,9 @@ async def run_ffmpeg(arguments: list[str], timeout: float = 120) -> None:
 
 async def play_sound(context: Context, sound: str):
     if not context.voice_client:
-        await context.author.voice.channel.connect()
+        await context.bot.voice_connection_manager.connect(
+            context.author.voice.channel
+        )
     if context.voice_client.is_playing():
         context.voice_client.stop()
     start = perf_counter()
@@ -215,7 +217,9 @@ class Voice(commands.Cog, name="voice"):
                     await context.voice_client.move_to(context.author.voice.channel)
 
         else:
-            await context.author.voice.channel.connect()
+            await self.bot.voice_connection_manager.connect(
+                context.author.voice.channel
+            )
 
         sounds = get_sound_with_extension()
 

@@ -31,6 +31,7 @@ from helpers.message_handler import (
     register_message_handler,
 )
 from helpers.reddit import close_reddit_client
+from helpers.voice_connection import VoiceConnectionManager, human_member_count
 
 if not os.path.isfile(
     f"{os.path.realpath(os.path.dirname(__file__))}/config/config.json"
@@ -149,6 +150,10 @@ file_handler_formatter = logging.Formatter(
 # Create the main logger and set its level to DEBUG so all messages are processed.
 logger = logging.getLogger("discord_bot")
 logger.setLevel(logging.DEBUG)
+# Some audio/ML dependencies configure the root logger lazily. Keep records from
+# being printed a second time by those late root handlers.
+logger.propagate = False
+logging.getLogger("discord").propagate = False
 
 # Console handler (only logs INFO and above)
 console_handler = logging.StreamHandler()
@@ -184,6 +189,7 @@ logger.addHandler(debug_file_handler)
 
 # Attach the logger to the bot.
 bot.logger = logger
+bot.voice_connection_manager = VoiceConnectionManager(logger)
 
 # updating version
 
@@ -228,7 +234,9 @@ async def on_ready() -> None:
 
 
 def channel_member_count(channel: discord.VoiceChannel, count_bots=False) -> int:
-    return len([member for member in channel.members if not member.bot or count_bots])
+    if count_bots:
+        return len(channel.members)
+    return human_member_count(channel)
 
 
 @bot.event
@@ -236,23 +244,7 @@ async def on_voice_state_update(member, before, after) -> None:
     # Abort immediately if voice functionality is disabled.
     if not globals().get("ENABLE_VOICE_COG", False):
         return
-    if member.bot:
-        return
-    # If bot is already in a voice channel on that guild
-    if member.guild.voice_client:
-        # If the bot is alone in the voice channel, disconnect
-        if channel_member_count(member.guild.voice_client.channel) == 0:
-            logger.info(
-                f"Disconnected from {member.guild.voice_client.channel} because I was alone in it."
-            )
-            await member.guild.voice_client.disconnect()
-
-            return
-    else:
-        # If someone joins a voice channel, join it
-        if after.channel:
-            await after.channel.connect()
-            logger.info(f"Connected to {after.channel} because someone joined it.")
+    await bot.voice_connection_manager.handle_voice_state_update(member, after)
 
 
 @tasks.loop(minutes=1.0)
