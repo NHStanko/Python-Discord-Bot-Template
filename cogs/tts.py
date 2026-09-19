@@ -11,6 +11,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from helpers.tts_service import PocketTTSService
+from helpers.ai import AIHelper, load_ai_helper_from_config
 from helpers.tts_sequence import (
     RandomSpeechSegment,
     SilenceSegment,
@@ -23,13 +24,37 @@ from helpers.voice_store import VoiceStore
 logger = logging.getLogger("discord_bot")
 SUPPORTED_AUDIO_SUFFIXES = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".opus", ".webm"}
 BROCK_USER_ID = 157644363227201536
-JOIN_GREETING_CHANCE = 100
-JOIN_GREETING_VOICE = "northernlion"
-JOIN_GREETING_TEXT = "Hi brock, what's up"
+BROCK_TTS_CHANCE = 100
+BROCK_TTS_VOICE = "northernlion"
+BROCK_TTS_PROMPT = Path(__file__).resolve().parent.parent / "prompts" / "brock_game_tts.txt"
+EPHEMERAL_LIFETIME = 5
 
 
-def should_play_join_greeting(user_id: int) -> bool:
-    return user_id == BROCK_USER_ID and secrets.randbelow(JOIN_GREETING_CHANCE) == 0
+def should_trigger_brock_tts(user_id: int) -> bool:
+    return user_id == BROCK_USER_ID and secrets.randbelow(BROCK_TTS_CHANCE) == 0
+
+
+def game_names(activities: tuple[discord.BaseActivity, ...]) -> tuple[str, ...]:
+    names = []
+    for activity in activities:
+        name = getattr(activity, "name", None)
+        if activity.type is discord.ActivityType.playing and isinstance(name, str):
+            if cleaned_name := name.strip():
+                names.append(cleaned_name)
+    return tuple(names)
+
+
+def newly_started_game(
+    before: tuple[discord.BaseActivity, ...], after: tuple[discord.BaseActivity, ...]
+) -> str | None:
+    previous = set(game_names(before))
+    return next((name for name in game_names(after) if name not in previous), None)
+
+
+def valid_brock_monologue(text: str) -> bool:
+    paragraphs = [part.strip() for part in text.strip().split("\n\n") if part.strip()]
+    word_count = len(text.split())
+    return len(paragraphs) == 2 and 250 <= word_count <= 375
 
 
 class VoiceVolumeView(discord.ui.View):
@@ -53,7 +78,9 @@ class VoiceVolumeView(discord.ui.View):
         if interaction.user.id == self.owner_id:
             return True
         await interaction.response.send_message(
-            "Only the owner who opened this panel can use it.", ephemeral=True
+            "Only the owner who opened this panel can use it.",
+            ephemeral=True,
+            delete_after=EPHEMERAL_LIFETIME,
         )
         return False
 
@@ -125,48 +152,160 @@ class TTS(commands.Cog, name="tts"):
         language = os.getenv("POCKET_TTS_LANGUAGE", tts_config.get("language", "english"))
         self.store = VoiceStore(data_dir)
         self.tts = PocketTTSService(self.store, language)
+        self.ai_helper: AIHelper | None = None
+        self._brock_locks: dict[int, asyncio.Lock] = {}
 
-    async def maybe_play_join_greeting(
-        self, member: discord.Member, channel: discord.VoiceChannel
+    async def delete_original_response_later(
+        self, interaction: discord.Interaction
     ) -> None:
-        if not should_play_join_greeting(member.id):
+        await asyncio.sleep(EPHEMERAL_LIFETIME)
+        try:
+            await interaction.delete_original_response()
+        except discord.NotFound:
+            pass
+        except discord.HTTPException:
+            logger.exception("Could not delete an ephemeral TTS response")
+
+    def schedule_original_response_deletion(
+        self, interaction: discord.Interaction
+    ) -> None:
+        asyncio.create_task(self.delete_original_response_later(interaction))
+
+    def brock_prompt(self, game: str) -> str:
+        template = BROCK_TTS_PROMPT.read_text(encoding="utf-8")
+        return template.replace("[INSERT GAME HERE]", game).replace(
+            "[OPTIONAL]", "Not provided"
+        )
+
+    async def generate_brock_monologue(self, game: str) -> str | None:
+        if self.ai_helper is None:
+            self.ai_helper = load_ai_helper_from_config(self.bot, logger=logger)
+        if self.ai_helper is None:
+            logger.error("Brock game TTS skipped: Gemini is not configured")
+            return None
+
+        response, error = await self.ai_helper.generate_content(
+            prompt=self.brock_prompt(game),
+            thinking_level="high",
+            enable_web_search=True,
+        )
+        if error or not response:
+            logger.error("Brock game TTS generation failed: %s", error or "empty response")
+            return None
+        response = response.strip()
+        if not valid_brock_monologue(response):
+            logger.error(
+                "Brock game TTS generation had invalid format (%s words)",
+                len(response.split()),
+            )
+            return None
+        return response
+
+    async def maybe_play_brock_game_tts(
+        self, member: discord.Member, channel: discord.abc.Connectable, game: str
+    ) -> None:
+        if not should_trigger_brock_tts(member.id):
             return
 
-        output: Path | None = None
-        try:
-            profile = self.store.get_voice(JOIN_GREETING_VOICE)
-            client = member.guild.voice_client
-            if client is None or client.channel != channel or client.is_playing():
-                return
+        lock = self._brock_locks.setdefault(member.guild.id, asyncio.Lock())
+        if lock.locked():
+            logger.info("Brock game TTS skipped: another greeting is being prepared")
+            return
 
-            output = await self.tts.synthesize(profile.slug, JOIN_GREETING_TEXT)
-            client = member.guild.voice_client
-            if client is None or client.channel != channel or client.is_playing():
-                return
+        async with lock:
+            output: Path | None = None
+            try:
+                client = member.guild.voice_client
+                if client is not None and client.is_playing():
+                    logger.info("Brock game TTS skipped: the bot is already speaking")
+                    return
 
-            loop = asyncio.get_running_loop()
-            cleanup_path = output
+                try:
+                    profile = self.store.get_voice(BROCK_TTS_VOICE)
+                    self.store.state_path(profile.slug)
+                except (KeyError, FileNotFoundError, ValueError) as exc:
+                    logger.error("Brock game TTS voice is unavailable: %s", exc)
+                    return
 
-            def finished(error: Exception | None) -> None:
-                cleanup_path.unlink(missing_ok=True)
-                if error:
-                    loop.call_soon_threadsafe(
-                        logger.error, "Discord join greeting playback failed: %s", error
-                    )
+                monologue = await self.generate_brock_monologue(game)
+                if monologue is None:
+                    return
 
-            client.play(
-                discord.FFmpegPCMAudio(
-                    str(output), options=f"-af volume={profile.volume:.2f}"
-                ),
-                after=finished,
-            )
-            output = None
-            logger.info("Played Northernlion join greeting for user %s", member.id)
-        except Exception:
-            logger.exception("Northernlion join greeting generation/playback failed")
-        finally:
-            if output is not None:
-                output.unlink(missing_ok=True)
+                current_channel = getattr(member.voice, "channel", None)
+                if current_channel != channel:
+                    logger.info("Brock game TTS skipped: Brock left the voice channel")
+                    return
+
+                client = member.guild.voice_client
+                if client is None:
+                    client = await channel.connect()
+                elif client.channel != channel:
+                    await client.move_to(channel)
+                if client.is_playing():
+                    logger.info("Brock game TTS skipped: the bot is already speaking")
+                    return
+
+                output = await self.tts.synthesize(profile.slug, monologue)
+                client = member.guild.voice_client
+                current_channel = getattr(member.voice, "channel", None)
+                if (
+                    client is None
+                    or client.channel != channel
+                    or current_channel != channel
+                    or client.is_playing()
+                ):
+                    return
+
+                loop = asyncio.get_running_loop()
+                cleanup_path = output
+
+                def finished(error: Exception | None) -> None:
+                    cleanup_path.unlink(missing_ok=True)
+                    if error:
+                        loop.call_soon_threadsafe(
+                            logger.error, "Discord Brock TTS playback failed: %s", error
+                        )
+
+                client.play(
+                    discord.FFmpegPCMAudio(
+                        str(output), options=f"-af volume={profile.volume:.2f}"
+                    ),
+                    after=finished,
+                )
+                output = None
+                logger.info(
+                    "Played Northernlion game monologue for Brock while playing %s", game
+                )
+            except Exception:
+                logger.exception("Brock game TTS generation/playback failed")
+            finally:
+                if output is not None:
+                    output.unlink(missing_ok=True)
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ) -> None:
+        if member.bot or member.id != BROCK_USER_ID:
+            return
+        if after.channel is None or before.channel == after.channel:
+            return
+        games = game_names(member.activities)
+        if games:
+            await self.maybe_play_brock_game_tts(member, after.channel, games[0])
+
+    @commands.Cog.listener()
+    async def on_presence_update(
+        self, before: discord.Member, after: discord.Member
+    ) -> None:
+        if after.bot or after.id != BROCK_USER_ID or after.voice is None:
+            return
+        game = newly_started_game(before.activities, after.activities)
+        if game:
+            await self.maybe_play_brock_game_tts(after, after.voice.channel, game)
 
     async def voice_autocomplete(
         self, interaction: discord.Interaction, current: str
@@ -202,7 +341,9 @@ class TTS(commands.Cog, name="tts"):
         if interaction.user.id in owner_ids or await self.bot.is_owner(interaction.user):
             return True
         await interaction.response.send_message(
-            "Only a bot owner can manage voice profiles.", ephemeral=True
+            "Only a bot owner can manage voice profiles.",
+            ephemeral=True,
+            delete_after=EPHEMERAL_LIFETIME,
         )
         return False
 
@@ -238,11 +379,17 @@ class TTS(commands.Cog, name="tts"):
     async def speak(self, interaction: discord.Interaction, voice: str, text: str) -> None:
         member = interaction.user
         if not interaction.guild or not isinstance(member, discord.Member) or not member.voice:
-            await interaction.response.send_message("Join a voice channel first.", ephemeral=True)
+            await interaction.response.send_message(
+                "Join a voice channel first.",
+                ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
+            )
             return
         if not text.strip() or len(text) > self.max_text_length:
             await interaction.response.send_message(
-                f"Text must be 1-{self.max_text_length} characters.", ephemeral=True
+                f"Text must be 1-{self.max_text_length} characters.",
+                ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
             )
             return
 
@@ -277,15 +424,16 @@ class TTS(commands.Cog, name="tts"):
                 after=finished,
             )
             output = None
-            await interaction.followup.send(
-                f"Speaking with `{self.store.normalize_name(voice)}`.", ephemeral=True
+            await interaction.edit_original_response(
+                content=f"Speaking with `{self.store.normalize_name(voice)}`."
             )
         except Exception as exc:
             logger.exception("Speech generation/playback failed")
-            await interaction.followup.send(f"Could not speak: {exc}", ephemeral=True)
+            await interaction.edit_original_response(content=f"Could not speak: {exc}")
         finally:
             if output is not None:
                 output.unlink(missing_ok=True)
+            self.schedule_original_response_deletion(interaction)
 
     @tts_group.command(name="sequence", description="Speak a sequence of voices and pauses")
     @app_commands.describe(
@@ -294,11 +442,17 @@ class TTS(commands.Cog, name="tts"):
     async def sequence(self, interaction: discord.Interaction, script: str) -> None:
         member = interaction.user
         if not interaction.guild or not isinstance(member, discord.Member) or not member.voice:
-            await interaction.response.send_message("Join a voice channel first.", ephemeral=True)
+            await interaction.response.send_message(
+                "Join a voice channel first.",
+                ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
+            )
             return
         if interaction.guild.voice_client and interaction.guild.voice_client.is_playing():
             await interaction.response.send_message(
-                "The bot is already speaking; try again in a moment.", ephemeral=True
+                "The bot is already speaking; try again in a moment.",
+                ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
             )
             return
 
@@ -326,7 +480,9 @@ class TTS(commands.Cog, name="tts"):
             }
         except Exception as exc:
             await interaction.response.send_message(
-                f"Invalid sequence: {exc}", ephemeral=True
+                f"Invalid sequence: {exc}",
+                ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
             )
             return
 
@@ -396,13 +552,16 @@ class TTS(commands.Cog, name="tts"):
                 path.unlink(missing_ok=True)
             if output is not None:
                 output.unlink(missing_ok=True)
+            self.schedule_original_response_deletion(interaction)
 
     @tts_group.command(name="list", description="List globally available voices")
     async def voices(self, interaction: discord.Interaction) -> None:
         voices = self.store.list_voices()
         if not voices:
             await interaction.response.send_message(
-                "No voices have been trained yet.", ephemeral=True
+                "No voices have been trained yet.",
+                ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
             )
             return
         lines = []
@@ -415,7 +574,9 @@ class TTS(commands.Cog, name="tts"):
                 f"{round(voice.volume * 100)}% volume{status}"
             )
         await interaction.response.send_message(
-            "**Global voices**\n" + "\n".join(lines), ephemeral=True
+            "**Global voices**\n" + "\n".join(lines),
+            ephemeral=True,
+            delete_after=EPHEMERAL_LIFETIME,
         )
 
     @tts_group.command(name="volume", description="Adjust a voice's playback volume")
@@ -430,11 +591,16 @@ class TTS(commands.Cog, name="tts"):
                 self.store, profile.slug, profile.volume, interaction.user.id
             )
             await interaction.response.send_message(
-                view.content, view=view, ephemeral=True
+                view.content,
+                view=view,
+                ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
             )
         except Exception as exc:
             await interaction.response.send_message(
-                f"Could not adjust voice volume: {exc}", ephemeral=True
+                f"Could not adjust voice volume: {exc}",
+                ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
             )
 
     @tts_group.command(name="train", description="Train a new global voice")
@@ -500,6 +666,8 @@ class TTS(commands.Cog, name="tts"):
                     logger.exception("Could not roll back failed voice creation")
             logger.exception("Voice training failed")
             await interaction.edit_original_response(content=f"❌ Training failed: {exc}")
+        finally:
+            self.schedule_original_response_deletion(interaction)
 
     @samples_group.command(name="add", description="Stage another voice sample")
     @app_commands.describe(
@@ -532,12 +700,17 @@ class TTS(commands.Cog, name="tts"):
                 sample, youtube_url, start, duration
             )
             self.store.add_sample(voice, filename, content)
-            await interaction.followup.send(
-                f"Sample added to `{profile.slug}`. Run `/tts retrain` when ready.",
-                ephemeral=True,
+            await interaction.edit_original_response(
+                content=(
+                    f"Sample added to `{profile.slug}`. Run `/tts retrain` when ready."
+                )
             )
         except Exception as exc:
-            await interaction.followup.send(f"Could not add sample: {exc}", ephemeral=True)
+            await interaction.edit_original_response(
+                content=f"Could not add sample: {exc}"
+            )
+        finally:
+            self.schedule_original_response_deletion(interaction)
 
     @tts_group.command(name="retrain", description="Rebuild a voice from its samples")
     @app_commands.describe(voice="Voice")
@@ -548,12 +721,16 @@ class TTS(commands.Cog, name="tts"):
         await interaction.response.defer(ephemeral=True)
         try:
             await self.tts.train(voice)
-            await interaction.followup.send(
-                f"Voice `{self.store.normalize_name(voice)}` was rebuilt.", ephemeral=True
+            await interaction.edit_original_response(
+                content=f"Voice `{self.store.normalize_name(voice)}` was rebuilt."
             )
         except Exception as exc:
             logger.exception("Voice retraining failed")
-            await interaction.followup.send(f"Retraining failed: {exc}", ephemeral=True)
+            await interaction.edit_original_response(
+                content=f"Retraining failed: {exc}"
+            )
+        finally:
+            self.schedule_original_response_deletion(interaction)
 
     @samples_group.command(name="list", description="List retained samples for a voice")
     @app_commands.describe(voice="Voice")
@@ -565,11 +742,15 @@ class TTS(commands.Cog, name="tts"):
             samples = self.store.list_samples(voice)
             lines = [f"`{sample.id[:8]}` · {sample.original_filename}" for sample in samples]
             await interaction.response.send_message(
-                "**Retained samples**\n" + "\n".join(lines), ephemeral=True
+                "**Retained samples**\n" + "\n".join(lines),
+                ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
             )
         except Exception as exc:
             await interaction.response.send_message(
-                f"Could not list samples: {exc}", ephemeral=True
+                f"Could not list samples: {exc}",
+                ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
             )
 
     @samples_group.command(name="remove", description="Remove one retained sample")
@@ -585,10 +766,13 @@ class TTS(commands.Cog, name="tts"):
             await interaction.response.send_message(
                 f"Removed `{removed.original_filename}`. Run `/tts retrain` to apply it.",
                 ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
             )
         except Exception as exc:
             await interaction.response.send_message(
-                f"Could not remove sample: {exc}", ephemeral=True
+                f"Could not remove sample: {exc}",
+                ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
             )
 
     @tts_group.command(name="delete", description="Permanently erase a voice")
@@ -601,18 +785,24 @@ class TTS(commands.Cog, name="tts"):
             return
         if not confirm:
             await interaction.response.send_message(
-                "Nothing deleted. Set `confirm` to true.", ephemeral=True
+                "Nothing deleted. Set `confirm` to true.",
+                ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
             )
             return
         try:
             slug = self.store.normalize_name(voice)
             await self.tts.delete(slug)
             await interaction.response.send_message(
-                f"Permanently deleted `{slug}` and all of its files.", ephemeral=True
+                f"Permanently deleted `{slug}` and all of its files.",
+                ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
             )
         except Exception as exc:
             await interaction.response.send_message(
-                f"Could not delete voice: {exc}", ephemeral=True
+                f"Could not delete voice: {exc}",
+                ephemeral=True,
+                delete_after=EPHEMERAL_LIFETIME,
             )
 
 

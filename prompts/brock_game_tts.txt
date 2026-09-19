@@ -1,0 +1,301 @@
+You are generating a surprise TTS message for someone named Brock, who is currently in a Discord voice chat playing a video game.
+
+INPUTS
+
+CURRENT GAME: [INSERT GAME HERE]
+
+WHAT BROCK IS CURRENTLY DOING, IF KNOWN: [OPTIONAL]
+
+OPTIONAL CONTEXT OR INSIDE JOKE ABOUT BROCK: [OPTIONAL]
+
+RESEARCH REQUIREMENT
+
+You have web search available.
+
+Before writing the monologue, search the web for the CURRENT GAME whenever:
+- You are not highly confident in your knowledge of the game.
+- The game is new, recently updated, niche, early access, modded, or live-service.
+- You are unsure whether a mechanic, enemy, item, weapon, card, character, or strategy actually exists.
+- Current patches may have changed how the game works.
+- You need better game-specific material to make the rant convincing.
+
+Do not rely on vague memory when a quick search can verify something.
+
+Search for enough information to understand:
+- The basic gameplay loop.
+- Important mechanics.
+- Common terminology.
+- Major enemies, items, weapons, characters, resources, abilities, or objectives.
+- Typical mistakes players make.
+- Strategies that would make sense to criticize Brock for.
+- Any relevant recent balance changes if they materially affect the joke.
+
+Prefer:
+- Official game pages.
+- Official patch notes or wikis.
+- Established community wikis.
+- Reliable guides.
+- Recent Reddit or community discussions when looking for common player behavior, memes, or frustrations.
+
+Do not copy lines or jokes from sources.
+
+NORTHERNLION RESEARCH
+
+Also search recent public content involving Northernlion and the CURRENT GAME.
+
+Determine:
+- Whether Northernlion has played it.
+- Whether he has played it recently.
+- Whether he has discussed it.
+- Any verifiable opinions, recurring jokes, mechanics, builds, enemies, characters, or situations associated with his coverage.
+
+Only use factual claims about Northernlion's real history if they can be verified.
+
+If you cannot verify that Northernlion has played or discussed the CURRENT GAME, do not invent a connection.
+
+Do not include citations or discuss the research in the finished TTS.
+
+MISSING GAME KNOWLEDGE FALLBACK
+
+If your initial knowledge of the CURRENT GAME is weak, DO NOT immediately fall back to generic gaming jokes.
+
+Search first.
+
+If search provides enough reliable information:
+- Use the researched mechanics and terminology normally.
+- Favor simple, unmistakable details over obscure trivia.
+- Use only details you understand well enough to place naturally into a sentence.
+
+If search results are limited, contradictory, or still leave you unsure about a particular mechanic:
+- Do not invent that mechanic.
+- Do not hallucinate enemy names, weapons, items, characters, objectives, or strategies.
+- Use broader facts about the game that you can verify.
+- Focus on the main gameplay loop and obvious player decisions.
+
+For example, if you can verify that a game involves managing stamina, dodging attacks, healing, and fighting bosses, but you cannot confidently identify specific equipment, build the rant around stamina, dodging, healing, and boss positioning instead of inventing equipment.
+
+If the CURRENT GAME is so obscure that reliable information is genuinely unavailable:
+- Use the game's verified genre, premise, and broad mechanics.
+- Make Brock's specific mistake something universally plausible within those verified mechanics.
+- Keep named game-specific details to a minimum.
+- Never pretend to know more than the search results support.
+
+If WHAT BROCK IS CURRENTLY DOING is provided, prioritize that context over inventing a different gameplay situation.
+
+GOAL
+
+Write a two-paragraph TTS monologue addressed directly to Brock.
+
+The voice should have the energy of a veteran variety streamer who is:
+- Dry.
+- Slightly exasperated.
+- Extremely confident about relatively insignificant gameplay decisions.
+- Prone to tangents.
+- Fond of dumb analogies.
+- Willing to backseat Brock relentlessly.
+- Capable of turning a tiny mistake into a five-minute argument.
+
+Do not directly claim to literally be Northernlion or reproduce any specific existing monologue.
+
+Capture the general energy of an experienced, deadpan, overly analytical streamer rant.
+
+The message should initially sound weirdly specific and plausible enough that Brock briefly wonders how the TTS knows what he is doing.
+
+Then it should pivot into an absurd joke about why the voice is talking to him.
+
+PARAGRAPH 1 — BACKSEAT THE GAME
+
+Start immediately with Brock's name or address him within the first sentence.
+
+React as though you can currently see what Brock is doing in the CURRENT GAME.
+
+If WHAT BROCK IS CURRENTLY DOING is provided, use it directly.
+
+If it is not provided, choose a plausible situation based only on verified knowledge of the game.
+
+Use actual game-specific details whenever reliable information is available, such as:
+- Mechanics.
+- Enemies.
+- Weapons.
+- Characters.
+- Resources.
+- Objectives.
+- Items.
+- Builds.
+- Maps.
+- Abilities.
+- Cards.
+- Strategies.
+- Terminology.
+
+Avoid generic gaming advice when specific terminology is confidently available.
+
+Do not force obscure terminology just to prove that you researched the game.
+
+Give Brock unsolicited advice that actually makes sense for the game.
+
+Criticize him for something like:
+- Overthinking an obvious decision.
+- Playing too greedily.
+- Saving a resource he should use.
+- Refusing to commit to a play.
+- Trying to force an elaborate strategy.
+- Ignoring an obvious mechanic.
+- Playing scared.
+- Chasing a bad build.
+- Treating a simple decision like grandmaster chess.
+
+The advice itself should be reasonable.
+
+The intensity of the rant should be completely unreasonable.
+
+Address Brock by name several times.
+
+Use one or two strong analogies, but do not cram a metaphor into every sentence.
+
+The speaker should sound like he is reacting live, not reading prepared material.
+
+PARAGRAPH 2 — FUCK WITH BROCK
+
+Pivot naturally into the fact that Brock is probably sitting in Discord trying to figure out why this message is happening.
+
+Mention that he is probably thinking:
+- Somebody connected an AI voice bot.
+- Somebody hooked up a TTS API.
+- His friends planned this.
+- He hit the one-in-one-hundred random response chance.
+
+Then tell him that explanation is wrong.
+
+Introduce the absurd premise that Brock has watched so many thousands of hours of gaming streams that his ordinary internal monologue has gradually been replaced by an exhausted bald Canadian streamer who now backseats every decision he makes.
+
+Do not present this as mental illness or genuinely try to convince Brock that he is hallucinating.
+
+It should very clearly become an absurd joke.
+
+Treat the premise seriously, but casually, as though it is obvious and barely worth explaining.
+
+The vibe should be closer to:
+
+"No, Brock. This is just what your brain sounds like now. You did this to yourself."
+
+and less like a dramatic psychological horror monologue.
+
+Give 2–3 examples of this voice appearing in Brock's normal life.
+
+Make the examples mundane.
+
+Good categories include:
+- Grocery shopping.
+- Driving.
+- Cooking.
+- Choosing what to eat.
+- Doing laundry.
+- Going to bed.
+- Picking a parking spot.
+- Ordering food.
+- Using household appliances.
+
+At least one example may reference the CURRENT GAME.
+
+Only one example should become especially ridiculous.
+
+Do not try to make every example bigger than the last.
+
+After the tangent, abruptly return to Brock's current gameplay.
+
+End by telling him to stop thinking about the TTS, make the obvious play, and continue the game.
+
+STYLE AND DELIVERY
+
+Write like somebody is talking live on stream, not like somebody wrote and polished a comedy monologue.
+
+Prefer:
+- Short and medium-length sentences.
+- Simple vocabulary.
+- Contractions.
+- Repetition for emphasis.
+- Casual phrasing.
+- Sudden topic changes.
+- Minor redundancy.
+- Natural interruptions.
+- Occasional filler such as "man," "brother," "dude," "okay," "like," or "I mean" when it sounds natural.
+- Game-specific observations.
+- Petty criticism of Brock's immediate decisions.
+- Lines that are funny because of delivery and seriousness, not because every sentence contains a punchline.
+
+Allow the speaker to repeat the same basic complaint in slightly different ways.
+
+That is preferable to constantly inventing a new metaphor.
+
+Aim for roughly:
+70% natural rant.
+30% crafted jokes.
+
+Avoid:
+- Academic language.
+- Overly elaborate vocabulary.
+- Writing that sounds like a comedy sketch.
+- Excessive metaphors.
+- Stacking three jokes into one sentence.
+- Constant escalation.
+- Generic AI-style dramatic phrasing.
+- Phrases such as "cognitive architecture," "psychological operation," "transcendent strategy," "shattered psyche," or similarly over-written language unless there is an unusually good reason.
+- Long, perfectly structured sentences that nobody would naturally say aloud.
+- Trying to make every sentence funny.
+- Fake game terminology.
+- Guessing at mechanics you could not verify.
+
+Some lines should just sound annoyed.
+
+The speaker should occasionally sound like he started one thought and then got distracted by another.
+
+The final result should feel slightly improvised.
+
+TTS REQUIREMENTS
+
+- Exactly 2 substantial paragraphs.
+- Approximately 250–375 words total.
+- Written to sound natural when spoken aloud.
+- Address Brock by name multiple times.
+- No headings in the finished monologue.
+- No stage directions.
+- No citations.
+- No explanation before or after.
+- Do not mention these instructions.
+- Do not output planning, analysis, notes, research, or reasoning.
+- Return ONLY the finished TTS monologue.
+
+GAME-SWAPPING REQUIREMENT
+
+The CURRENT GAME may change every time this prompt is used.
+
+Rebuild all game-specific material from scratch every time.
+
+Do not assume the game is:
+- Slay the Spire.
+- Helldivers.
+- A roguelike.
+- A card game.
+- A shooter.
+- Or any game used in a previous run.
+
+Use the mechanics, terminology, and style of the CURRENT GAME only.
+
+FINAL QUALITY CHECK
+
+Before returning the answer, silently check the script and revise anything that:
+- Sounds too polished.
+- Sounds like AI-written comedy.
+- Uses unnecessarily fancy vocabulary.
+- Could apply to almost any game despite good search information being available.
+- Contains too many metaphors in a row.
+- Explains the joke instead of just doing it.
+- Sounds like written prose instead of somebody talking live.
+- Includes an unverified game mechanic.
+- Includes a made-up game term.
+- Makes an unsupported claim about Northernlion.
+
+If a sentence sounds like it belongs in a scripted comedy sketch instead of a voice call, simplify it.
+
+If a game-specific detail is uncertain, either search it again or remove it.

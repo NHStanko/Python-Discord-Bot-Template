@@ -64,6 +64,10 @@ The bot includes global reusable voice profiles powered by Pocket TTS. The
 runtime uses one CPU model and serializes inference because the model state is
 not thread-safe.
 
+The Brock game-aware TTS event requires the privileged **Presence Intent** to
+be enabled for the bot in the Discord Developer Portal. It uses the configured
+Gemini model with Google Search grounding and a trained `northernlion` voice.
+
 Available slash commands:
 
 * `/tts speak voice text` speaks in the caller's voice channel.
