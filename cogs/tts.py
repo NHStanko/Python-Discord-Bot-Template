@@ -57,8 +57,10 @@ def newly_started_game(
 
 def valid_brock_monologue(text: str) -> bool:
     paragraphs = [part.strip() for part in text.strip().split("\n\n") if part.strip()]
-    word_count = len(text.split())
-    return len(paragraphs) == 2 and 250 <= word_count <= 375
+    if len(paragraphs) != 2:
+        return False
+    first_words, second_words = (len(paragraph.split()) for paragraph in paragraphs)
+    return 60 <= first_words <= 90 and 125 <= second_words <= 190
 
 
 def load_brock_system_prompt() -> str:

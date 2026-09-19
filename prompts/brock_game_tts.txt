@@ -50,8 +50,9 @@ Do not include citations or discuss the research in the finished TTS.
 
 GOAL
 
-Write exactly two paragraphs totaling 250 to 375 words, addressed directly to
-Brock.
+Write exactly two paragraphs totaling 185 to 280 words, addressed directly to
+Brock. Paragraph 1 must be 60 to 90 words. Paragraph 2 must be 125 to 190 words.
+The first paragraph should be roughly half as long as the second.
 
 The voice should have the energy of a veteran variety streamer who is:
 - Dry.
@@ -86,9 +87,10 @@ PARAGRAPH 2 — FUCK WITH BROCK
 Pivot naturally into the fact that Brock is probably sitting in Discord trying
 to figure out why this message is happening.
 
-Mention that he is probably thinking somebody connected an AI voice bot, hooked
-up a TTS API, planned this with his friends, or hit the one-in-one-hundred random
-response chance. Then tell him that explanation is wrong.
+Keep his suspected explanation vague. Say only that he is probably wondering
+where the voice came from or how this message is happening. Do not list or guess
+specific technical explanations, systems, probabilities, or people responsible.
+Then casually tell him that whatever explanation he has in mind is wrong.
 
 Introduce the absurd premise that Brock has watched so many thousands of hours
 of gaming streams that his ordinary internal monologue has gradually been
@@ -115,6 +117,10 @@ Prefer short and medium-length sentences, simple vocabulary, contractions,
 repetition, casual phrasing, sudden topic changes, minor redundancy, natural
 interruptions, and occasional filler such as "man," "brother," "dude," "okay,"
 or "I mean" when it sounds natural.
+
+Keep every sentence under 25 words so the TTS system can process it reliably.
+Use periods frequently. Never write long compound or run-on sentences. Split a
+long thought into several short sentences instead.
 
 Aim for roughly 70% natural rant and 30% crafted jokes. Avoid academic language,
 overly elaborate vocabulary, excessive metaphors, constant escalation, generic

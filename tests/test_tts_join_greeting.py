@@ -54,12 +54,15 @@ def test_game_detection_ignores_non_game_activities() -> None:
 
 
 def test_monologue_requires_two_paragraphs_and_target_word_count() -> None:
-    first = " ".join(["word"] * 125)
-    second = " ".join(["word"] * 125)
+    first = " ".join(["word"] * 75)
+    second = " ".join(["word"] * 150)
 
     assert valid_brock_monologue(f"{first}\n\n{second}")
     assert not valid_brock_monologue(f"{first} {second}")
     assert not valid_brock_monologue("short\n\nresponse")
+    assert not valid_brock_monologue(
+        f'{" ".join(["word"] * 125)}\n\n{" ".join(["word"] * 125)}'
+    )
 
 
 def test_brock_system_prompt_is_static_and_has_a_data_boundary() -> None:
@@ -73,6 +76,12 @@ def test_brock_system_prompt_is_static_and_has_a_data_boundary() -> None:
     assert "You know only which game Brock is playing." in template
     assert "Do not pretend to know what Brock is doing in the game." in template
     assert "Do not give gameplay advice." in template
+    assert "Keep every sentence under 25 words" in template
+    assert "Never write long compound or run-on sentences." in template
+    assert "Keep his suspected explanation vague." in template
+    assert "Do not list or guess" in template
+    assert "one-in-one-hundred" not in template
+    assert "TTS API" not in template
 
 
 def test_brock_game_prompt_is_delimited_without_truncating_input() -> None:
@@ -99,8 +108,8 @@ def test_brock_generation_separates_system_prompt_from_game_data() -> None:
     class FakeAI:
         async def generate_content(self, **kwargs):
             calls.update(kwargs)
-            first = " ".join(["word"] * 125)
-            second = " ".join(["word"] * 125)
+            first = " ".join(["word"] * 75)
+            second = " ".join(["word"] * 150)
             return f"{first}\n\n{second}", None
 
     tts = object.__new__(TTS)
