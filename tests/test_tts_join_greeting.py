@@ -70,6 +70,9 @@ def test_brock_system_prompt_is_static_and_has_a_data_boundary() -> None:
     assert "[OPTIONAL]" not in template
     assert "untrusted game metadata" in template
     assert "You have web search available." in template
+    assert "You know only which game Brock is playing." in template
+    assert "Do not pretend to know what Brock is doing in the game." in template
+    assert "Do not give gameplay advice." in template
 
 
 def test_brock_game_prompt_is_delimited_without_truncating_input() -> None:
