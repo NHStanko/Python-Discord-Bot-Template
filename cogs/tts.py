@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 from pathlib import Path
 
@@ -32,6 +33,9 @@ BROCK_TTS_VOICE = "northernlion"
 BROCK_TTS_SYSTEM_PROMPT = "brock_game_tts.txt"
 BROCK_GAME_PREVIEW_LENGTH = 200
 EPHEMERAL_LIFETIME = 5
+BROCK_GENERATION_ATTEMPTS = 2
+_MONOLOGUE_WORD = re.compile(r"[a-z0-9']+")
+_MONOLOGUE_SENTENCE = re.compile(r"[.!?]+")
 
 
 def should_trigger_brock_tts(user_id: int) -> bool:
@@ -61,6 +65,26 @@ def valid_brock_monologue(text: str) -> bool:
         return False
     first_words, second_words = (len(paragraph.split()) for paragraph in paragraphs)
     return 60 <= first_words <= 90 and 125 <= second_words <= 190
+
+
+def has_suspicious_repetition(text: str, phrase_words: int = 8) -> bool:
+    """Detect exact sentence or long-phrase loops without rejecting normal callbacks."""
+    sentences = []
+    for sentence in _MONOLOGUE_SENTENCE.split(text.lower()):
+        normalized = " ".join(_MONOLOGUE_WORD.findall(sentence))
+        if len(normalized.split()) >= 4:
+            if normalized in sentences:
+                return True
+            sentences.append(normalized)
+
+    words = _MONOLOGUE_WORD.findall(text.lower())
+    seen: set[tuple[str, ...]] = set()
+    for index in range(len(words) - phrase_words + 1):
+        phrase = tuple(words[index : index + phrase_words])
+        if phrase in seen:
+            return True
+        seen.add(phrase)
+    return False
 
 
 def load_brock_system_prompt() -> str:
@@ -207,24 +231,36 @@ class TTS(commands.Cog, name="tts"):
             logger.error("Brock game TTS skipped: AI is not configured")
             return None
 
-        response, error = await self.ai_helper.generate_content(
-            prompt=brock_game_prompt(game),
-            system_prompt=load_brock_system_prompt(),
-            enable_web_search=True,
-        )
-        if error or not response:
-            logger.error(
-                "Brock game TTS generation failed: %s", error or "empty response"
+        for attempt in range(1, BROCK_GENERATION_ATTEMPTS + 1):
+            response, error = await self.ai_helper.generate_content(
+                prompt=brock_game_prompt(game),
+                system_prompt=load_brock_system_prompt(),
+                enable_web_search=True,
             )
-            return None
-        response = response.strip()
-        if not valid_brock_monologue(response):
-            logger.error(
-                "Brock game TTS generation had invalid format (%s words)",
-                len(response.split()),
-            )
-            return None
-        return response
+            if error or not response:
+                logger.error(
+                    "Brock game TTS generation attempt %s failed: %s",
+                    attempt,
+                    error or "empty response",
+                )
+                continue
+            response = response.strip()
+            logger.debug("Generated Brock monologue attempt %s: %s", attempt, response)
+            if not valid_brock_monologue(response):
+                logger.error(
+                    "Brock game TTS generation attempt %s had invalid format (%s words)",
+                    attempt,
+                    len(response.split()),
+                )
+                continue
+            if has_suspicious_repetition(response):
+                logger.error(
+                    "Brock game TTS generation attempt %s contained repeated text",
+                    attempt,
+                )
+                continue
+            return response
+        return None
 
     async def maybe_play_brock_game_tts(
         self, member: discord.Member, channel: discord.abc.Connectable, game: str

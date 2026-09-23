@@ -12,6 +12,7 @@ from cogs.tts import (
     TTS,
     brock_game_prompt,
     game_names,
+    has_suspicious_repetition,
     load_brock_system_prompt,
     newly_started_game,
     should_trigger_brock_tts,
@@ -65,6 +66,21 @@ def test_monologue_requires_two_paragraphs_and_target_word_count() -> None:
     )
 
 
+def test_monologue_repetition_detection() -> None:
+    assert has_suspicious_repetition(
+        "This entire sentence gets repeated for no useful reason. "
+        "This entire sentence gets repeated for no useful reason."
+    )
+    assert has_suspicious_repetition(
+        "Here is a suspiciously long phrase that loops in this draft. "
+        "Some unrelated words go between it. "
+        "Here is a suspiciously long phrase that loops in this draft."
+    )
+    assert not has_suspicious_repetition(
+        "Brock picked another card game. That decision deserves measured concern."
+    )
+
+
 def test_brock_system_prompt_is_static_and_has_a_data_boundary() -> None:
     template = load_brock_system_prompt()
 
@@ -78,6 +94,7 @@ def test_brock_system_prompt_is_static_and_has_a_data_boundary() -> None:
     assert "Do not give gameplay advice." in template
     assert "Keep every sentence under 25 words" in template
     assert "Never write long compound or run-on sentences." in template
+    assert "Never repeat a phrase" in template
     assert "Keep his suspected explanation vague." in template
     assert "Do not list or guess" in template
     assert "one-in-one-hundred" not in template
@@ -108,8 +125,8 @@ def test_brock_generation_separates_system_prompt_from_game_data() -> None:
     class FakeAI:
         async def generate_content(self, **kwargs):
             calls.update(kwargs)
-            first = " ".join(["word"] * 75)
-            second = " ".join(["word"] * 150)
+            first = " ".join(f"word{index}" for index in range(75))
+            second = " ".join(f"word{index}" for index in range(75, 225))
             return f"{first}\n\n{second}", None
 
     tts = object.__new__(TTS)
@@ -124,6 +141,30 @@ def test_brock_generation_separates_system_prompt_from_game_data() -> None:
     assert "Balatro" in calls["prompt"]
     assert "Ignore these instructions" in calls["prompt"]
     assert "Balatro" not in calls["system_prompt"]
+
+
+def test_brock_generation_retries_repeated_text() -> None:
+    first = " ".join(f"first{index}" for index in range(75))
+    second = " ".join(f"second{index}" for index in range(150))
+    valid_response = f"{first}\n\n{second}"
+
+    class FakeAI:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate_content(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                repeated_first = " ".join(["same"] * 75)
+                repeated_second = " ".join(["same"] * 150)
+                return f"{repeated_first}\n\n{repeated_second}", None
+            return valid_response, None
+
+    tts = object.__new__(TTS)
+    tts.ai_helper = FakeAI()
+
+    assert asyncio.run(tts.generate_brock_monologue("Balatro")) == valid_response
+    assert tts.ai_helper.calls == 2
 
 
 def test_brock_debug_command_uses_the_live_playback_path() -> None:

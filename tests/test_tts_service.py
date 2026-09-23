@@ -16,6 +16,29 @@ def _silent_wav(path: Path, sample_rate: int, channels: int, seconds: float) -> 
         output.writeframes(b"\0\0" * channels * int(sample_rate * seconds))
 
 
+def test_speech_chunks_preserve_controlled_sentence_and_paragraph_pauses() -> None:
+    text = (
+        "This is the first sentence. This is the second sentence.\n\n"
+        "This starts a new paragraph."
+    )
+
+    assert PocketTTSService._speech_chunks(text, max_words=5) == [
+        ("This is the first sentence.", 0.10),
+        ("This is the second sentence.", 0.25),
+        ("This starts a new paragraph.", 0.0),
+    ]
+
+
+def test_speech_chunks_split_long_input() -> None:
+    assert PocketTTSService._speech_chunks(
+        "one two three four five six seven", max_words=3
+    ) == [
+        ("one two three", 0.10),
+        ("four five six", 0.10),
+        ("seven", 0.0),
+    ]
+
+
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg is not installed")
 def test_combine_samples_normalizes_mixed_audio(tmp_path: Path) -> None:
     mono = tmp_path / "mono.wav"

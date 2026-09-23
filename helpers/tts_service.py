@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -8,6 +9,13 @@ from typing import Any
 from urllib.parse import urlparse
 
 from helpers.voice_store import VoiceStore
+
+TTS_CHUNK_WORDS = 32
+TTS_MAX_TOKENS = 40
+TTS_SENTENCE_PAUSE = 0.10
+TTS_PARAGRAPH_PAUSE = 0.25
+TTS_FRAMES_AFTER_EOS = 1
+_SENTENCE_BOUNDARY = re.compile(r"(?:(?<=[.!?])|(?<=[.!?][\"']))\s+")
 
 
 class PocketTTSService:
@@ -107,7 +115,13 @@ class PocketTTSService:
         seconds_per_sample = 30 / len(samples)
         filters = [
             f"[{index}:a]aformat=sample_fmts=fltp:sample_rates=24000:"
-            f"channel_layouts=mono,atrim=duration={seconds_per_sample},"
+            "channel_layouts=mono,"
+            "silenceremove=start_periods=1:start_duration=0.05:"
+            "start_threshold=-50dB:stop_periods=1:stop_duration=0.10:"
+            "stop_threshold=-50dB,"
+            "loudnorm=I=-20:TP=-2:LRA=11,"
+            "aformat=sample_fmts=fltp:sample_rates=24000:channel_layouts=mono,"
+            f"apad=pad_dur=0.1,atrim=duration={seconds_per_sample},"
             f"asetpts=PTS-STARTPTS[a{index}]"
             for index in range(len(samples))
         ]
@@ -146,7 +160,70 @@ class PocketTTSService:
         async with self._lock:
             await asyncio.to_thread(self._train_sync, slug)
 
+    @staticmethod
+    def _split_long_sentence(sentence: str, max_words: int) -> list[str]:
+        words = sentence.split()
+        return [
+            " ".join(words[index : index + max_words])
+            for index in range(0, len(words), max_words)
+        ]
+
+    @classmethod
+    def _speech_chunks(
+        cls, text: str, max_words: int = TTS_CHUNK_WORDS
+    ) -> list[tuple[str, float]]:
+        """Create short generation units with an explicit pause after each one."""
+        paragraphs = [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
+        chunks: list[tuple[str, float]] = []
+        for paragraph_index, paragraph in enumerate(paragraphs):
+            normalized = " ".join(paragraph.split())
+            sentences = [
+                piece.strip()
+                for piece in _SENTENCE_BOUNDARY.split(normalized)
+                if piece.strip()
+            ]
+            units = [
+                unit
+                for sentence in sentences
+                for unit in cls._split_long_sentence(sentence, max_words)
+            ]
+            grouped: list[str] = []
+            grouped_words = 0
+            for unit in units:
+                unit_words = len(unit.split())
+                if grouped and grouped_words + unit_words > max_words:
+                    chunks.append((" ".join(grouped), TTS_SENTENCE_PAUSE))
+                    grouped = []
+                    grouped_words = 0
+                grouped.append(unit)
+                grouped_words += unit_words
+            if grouped:
+                pause = (
+                    TTS_PARAGRAPH_PAUSE
+                    if paragraph_index < len(paragraphs) - 1
+                    else 0.0
+                )
+                chunks.append((" ".join(grouped), pause))
+        return chunks
+
+    @staticmethod
+    def _trim_audio_boundaries(audio: Any, sample_rate: int) -> Any:
+        """Remove model-added boundary silence while retaining a short safety pad."""
+        import numpy as np
+
+        samples = audio.detach().cpu().numpy().reshape(-1)
+        if not samples.size:
+            return samples
+        audible = np.flatnonzero(np.abs(samples) >= 0.001)
+        if not audible.size:
+            return samples
+        padding = int(sample_rate * 0.04)
+        start = max(0, int(audible[0]) - padding)
+        end = min(samples.size, int(audible[-1]) + padding + 1)
+        return samples[start:end]
+
     def _synthesize_sync(self, slug: str, text: str, output: Path) -> None:
+        import numpy as np
         import scipy.io.wavfile
 
         model = self._get_model()
@@ -154,8 +231,27 @@ class PocketTTSService:
         if state is None:
             state = model.get_state_for_audio_prompt(self.store.state_path(slug))
             self._states[slug] = state
-        audio = model.generate_audio(state, text)
-        scipy.io.wavfile.write(output, model.sample_rate, audio.detach().cpu().numpy())
+        chunks = self._speech_chunks(text)
+        if not chunks:
+            raise ValueError("Text cannot be empty")
+
+        rendered = []
+        for chunk, pause_after in chunks:
+            audio = model.generate_audio(
+                state,
+                chunk,
+                max_tokens=TTS_MAX_TOKENS,
+                frames_after_eos=TTS_FRAMES_AFTER_EOS,
+            )
+            rendered.append(self._trim_audio_boundaries(audio, model.sample_rate))
+            if pause_after:
+                rendered.append(
+                    np.zeros(
+                        int(model.sample_rate * pause_after),
+                        dtype=rendered[-1].dtype,
+                    )
+                )
+        scipy.io.wavfile.write(output, model.sample_rate, np.concatenate(rendered))
 
     async def synthesize(self, name: str, text: str) -> Path:
         slug = self.store.normalize_name(name)
