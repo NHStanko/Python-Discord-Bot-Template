@@ -204,13 +204,12 @@ class TTS(commands.Cog, name="tts"):
         if self.ai_helper is None:
             self.ai_helper = load_ai_helper_from_config(self.bot, logger=logger)
         if self.ai_helper is None:
-            logger.error("Brock game TTS skipped: Gemini is not configured")
+            logger.error("Brock game TTS skipped: AI is not configured")
             return None
 
         response, error = await self.ai_helper.generate_content(
             prompt=brock_game_prompt(game),
             system_prompt=load_brock_system_prompt(),
-            thinking_level="high",
             enable_web_search=True,
         )
         if error or not response:

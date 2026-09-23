@@ -2,6 +2,14 @@
 
 Here is the most recent update made on this template.
 
+### Configurable AI API (22 September 2026)
+
+* Replaced the Google AI SDK with asynchronous OpenAI-compatible API requests.
+* Added configurable API keys, endpoints, models, structured output, and reasoning.
+* Preserved image input and added OpenRouter/OpenAI web search routing with an
+  optional separate search model.
+* Documented model requirements, configuration migration, and provider limitations.
+
 ### Pocket TTS Update (13 September 2026)
 
 * Added reusable global voice profiles powered by Pocket TTS

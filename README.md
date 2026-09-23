@@ -81,6 +81,70 @@ bot process directly and can restart it when needed. It no longer performs a
 scheduled daily restart; configure restart policy and log rotation in the
 supervisor instead.
 
+## AI provider configuration
+
+AI commands use an OpenAI-compatible API. Set these keys in `config/config.json`
+and restart the bot:
+
+```json
+{
+  "ai_api_key": "YOUR_PROVIDER_KEY",
+  "ai_base_url": "https://openrouter.ai/api/v1",
+  "ai_model": "YOUR_OPENROUTER_MODEL_ID",
+  "ai_search_model": "",
+  "ai_web_search": "auto",
+  "ai_structured_output": "json_schema",
+  "ai_reasoning_effort": "",
+  "ai_debug": false
+}
+```
+
+Use an OpenRouter model ID including its provider prefix. For direct OpenAI,
+change `ai_base_url` to `https://api.openai.com/v1`, use an OpenAI API key,
+and set `ai_model` to an OpenAI model ID available to your account. Other
+OpenAI-compatible base URLs also work for Chat Completions. Supply the base URL,
+not the full `/chat/completions` path. Only configure endpoints you trust:
+they receive the API key and message/image content.
+
+Alternatively, leave `ai_api_key` blank and set the `AI_API_KEY` environment
+variable. Old provider-specific keys are no longer used; replace them with
+these settings. No new SDK dependency is needed: requests use the existing
+asynchronous HTTP client.
+
+Feature requirements:
+
+* Image explanations and image-based Bajs reactions require a vision model.
+  Animated images are sent as their first frame. This does not add video or
+  audio understanding.
+* Bajs React defaults to strict JSON schema output. Choose a model supporting
+  structured outputs, or set `ai_structured_output` to `json_object` (JSON mode)
+  or `prompt` (no API format constraint). These fallbacks are less reliable;
+  malformed output can fail the command.
+* xQc explanations and Brock game TTS request web search. `ai_web_search: "auto"`
+  uses OpenRouter's web plugin or OpenAI's Responses API with the web search tool,
+  based on the endpoint hostname. OpenAI needs a model supporting Responses and
+  web search. `ai_search_model` optionally selects a separate model for these
+  requests; blank reuses `ai_model`. For compatible proxy endpoints explicitly
+  select `openrouter` or `openai`. Set `off` to knowingly use model knowledge
+  without live research. Unknown endpoints otherwise return a search configuration
+  error rather than silently omitting research.
+* Reasoning is optional: leave `ai_reasoning_effort` blank for broad compatibility,
+  or set a value supported by your model (such as `high`). The setting applies
+  to both regular and search models; internal reasoning is not displayed.
+* Provider moderation, model access, context limits, rate limits, and billing
+  still apply. Search can incur additional charges. Refusals and unsupported
+  feature errors are reported without retrying with reduced capabilities.
+* Pocket TTS voice training and ordinary speech remain local and independent
+  of the AI provider. Only the game-aware generated script uses this API.
+
+`ai_debug` logs request metadata only, not private prompts, images, responses,
+or API keys. The bot does not modify existing configuration or credentials.
+
+See [OpenAI vision](https://developers.openai.com/api/docs/guides/images-vision),
+[OpenAI web search](https://developers.openai.com/api/docs/guides/tools-web-search),
+and [OpenRouter web search](https://openrouter.ai/docs/guides/features/plugins/web-search)
+for provider capability details.
+
 ## Prompt resources
 
 Long AI behavior prompts live in `prompts/` rather than in the Python command
@@ -100,7 +164,7 @@ not thread-safe.
 
 The Brock game-aware TTS event requires the privileged **Presence Intent** to
 be enabled for the bot in the Discord Developer Portal. It uses the configured
-Gemini model with Google Search grounding and a trained `northernlion` voice.
+AI model with web search configured above and a trained `northernlion` voice.
 
 Available slash commands:
 

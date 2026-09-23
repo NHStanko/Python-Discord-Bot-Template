@@ -1,467 +1,244 @@
+"""Async OpenAI-compatible text, vision, structured output, and search."""
+
 import asyncio
-import inspect
+import base64
+import io
 import json
 import logging
 import os
-import shutil
 import tempfile
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlsplit
 
 import aiohttp
-from google import genai
-from google.genai import types
+from PIL import Image
 
 
 class AIHelper:
     def __init__(
-        self,
-        bot,
-        api_key: str,
-        model: str = "gemini-1.5-flash-002",
-        logger=None,
-        debug_mode: bool = False,
+        self, bot, api_key: str, model: str, logger=None,
+        debug_mode: bool = False, base_url: str = "https://openrouter.ai/api/v1",
+        web_search: str = "auto", structured_output: str = "json_schema",
+        reasoning_effort: str | None = None, search_model: str | None = None,
     ):
-        """Initialize the AI helper with API key and model"""
         self.bot = bot
         self.api_key = api_key
         self.model = model
-        self.client = genai.Client(api_key=api_key)
+        self.base_url = base_url.rstrip("/")
+        parsed = urlsplit(self.base_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.query or parsed.fragment:
+            raise ValueError("ai_base_url must be an HTTP(S) API base URL")
+        if web_search not in {"auto", "openrouter", "openai", "off"}:
+            raise ValueError("Invalid ai_web_search setting")
+        if structured_output not in {"json_schema", "json_object", "prompt"}:
+            raise ValueError("Invalid ai_structured_output setting")
+        self.web_search = web_search
+        if web_search == "auto":
+            self.web_search = {
+                "openrouter.ai": "openrouter", "api.openai.com": "openai",
+            }.get(parsed.hostname, "unsupported")
+        self.structured_output = structured_output
+        self.reasoning_effort = reasoning_effort
+        self.search_model = search_model or model
         self.logger = logger or logging.getLogger("discord_bot")
         self.debug_mode = debug_mode
-        self._http_session: aiohttp.ClientSession | None = None
-        self._http_session_lock: asyncio.Lock | None = None
-        self._debug_lock = asyncio.Lock()
-        if debug_mode:
-            self.debug_folder = Path("debug")
-            self.debug_file = self.debug_folder / "debug.json"
+        self._http_session = None
+        self._http_session_lock = asyncio.Lock()
 
-    async def _get_http_session(self) -> aiohttp.ClientSession:
-        session = self._http_session
-        if session is not None and not session.closed:
-            return session
-
-        if self._http_session_lock is None:
-            self._http_session_lock = asyncio.Lock()
+    async def _get_http_session(self):
         async with self._http_session_lock:
-            session = self._http_session
-            if session is None or session.closed:
-                session = aiohttp.ClientSession()
-                self._http_session = session
-            return session
+            if self._http_session is None or self._http_session.closed:
+                self._http_session = aiohttp.ClientSession()
+            return self._http_session
 
-    async def close(self) -> None:
-        """Close network clients owned by this helper.
-
-        The installed Gemini SDK exposes no public ``Client.close`` method;
-        close its underlying sync HTTP client when available, while keeping
-        the cleanup best-effort across SDK versions.
-        """
-        if self._http_session_lock is None:
-            session = self._http_session
+    async def close(self):
+        async with self._http_session_lock:
+            if self._http_session is not None and not self._http_session.closed:
+                await self._http_session.close()
             self._http_session = None
-            if session is not None and not session.closed:
-                await session.close()
-        else:
-            async with self._http_session_lock:
-                session = self._http_session
-                self._http_session = None
-                if session is not None and not session.closed:
-                    await session.close()
 
-        api_client = getattr(self.client, "_api_client", None)
-        http_client = getattr(api_client, "_httpx_client", None)
-        close = getattr(http_client, "close", None)
-        if callable(close):
-            await asyncio.to_thread(close)
-
-    def _save_debug_info_sync(self, request_data: Dict[str, Any]) -> None:
-        self.debug_folder.mkdir(exist_ok=True)
-        if not self.debug_file.exists():
-            self.debug_file.write_text(json.dumps({"requests": []}), encoding="utf-8")
-        debug_data = json.loads(self.debug_file.read_text(encoding="utf-8"))
-        request_data["timestamp"] = datetime.now().isoformat()
-        debug_data["requests"].append(request_data)
-        self.debug_file.write_text(json.dumps(debug_data, indent=2), encoding="utf-8")
-
-    async def _save_debug_info(self, request_data: Dict[str, Any]) -> None:
-        """Save debug information to debug.json"""
-        if not self.debug_mode:
-            return
-
+    async def download_image(self, url):
+        path = None
         try:
-            async with self._debug_lock:
-                await asyncio.to_thread(self._save_debug_info_sync, request_data)
-            self.logger.info("Debug information saved successfully")
-        except Exception as e:
-            self.logger.error(f"Error saving debug information: {e}")
-
-    async def download_image(self, url: str) -> Optional[str]:
-        """Download an image from a URL and save it to a temporary file"""
-        try:
-            self.logger.info("Downloading remote image")
-
-            # Set up headers to mimic a real browser request
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate, br",
-                "DNT": "1",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
-            }
-
             session = await self._get_http_session()
-            async with session.get(
-                url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)
-            ) as response:
-                if response.status != 200:
-                    self.logger.error(
-                        f"Failed to download image: HTTP {response.status}"
-                    )
-                    return None
-
-                # Create a temporary file
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                response.raise_for_status()
                 content = await response.read()
-                fd, temp_path = await asyncio.to_thread(tempfile.mkstemp, suffix=".png")
-                os.close(fd)
-                await asyncio.to_thread(Path(temp_path).write_bytes, content)
-
-                self.logger.info(f"Image downloaded and saved to: {temp_path}")
-                return temp_path
-        except Exception as e:
-            self.logger.error(f"Error downloading image: {e}")
+            fd, path = tempfile.mkstemp(suffix=".png")
+            os.close(fd)
+            await asyncio.to_thread(Path(path).write_bytes, content)
+            return path
+        except Exception:
+            if path:
+                Path(path).unlink(missing_ok=True)
+            self.logger.warning("Could not download AI input image")
             return None
 
-    async def upload_file(self, file_path: str) -> Optional[Any]:
-        """Upload a file to the Gemini API asynchronously"""
-        try:
-            self.logger.info(f"Uploading file to Gemini API: {file_path}")
-            # Run the synchronous file upload in an executor
-            file = await asyncio.to_thread(self.client.files.upload, file=file_path)
-            self.logger.info(f"File uploaded successfully. URI: {file.uri}")
-            return file
-        except Exception as e:
-            self.logger.error(f"Error uploading file: {e}")
-            return None
+    @staticmethod
+    def _image_url(path):
+        # Decode actual bytes: downloads may have a .png name but contain a GIF.
+        # Send the first frame of animated images, supported across vision APIs.
+        with Image.open(path) as image:
+            output = io.BytesIO()
+            image.convert("RGB").save(output, format="PNG")
+        encoded = base64.b64encode(output.getvalue()).decode("ascii")
+        return f"data:image/png;base64,{encoded}"
+
+    async def _post(self, endpoint, payload):
+        session = await self._get_http_session()
+        async with session.post(
+            f"{self.base_url}/{endpoint}", json=payload,
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            timeout=aiohttp.ClientTimeout(total=180),
+            allow_redirects=False,
+        ) as response:
+            if response.status != 200:
+                # Provider error bodies can echo private input; do not expose them.
+                self.logger.warning("AI request failed (HTTP %s)", response.status)
+                if response.status == 429:
+                    return None, "AI rate limit or quota reached. Please try again later."
+                if response.status in {401, 403}:
+                    return None, "AI authentication or access failed. Check the API key and model access."
+                if response.status in {400, 404, 422}:
+                    return None, "AI request rejected. Check the endpoint, model, and its support for images, structured output, reasoning, and web search."
+                return None, f"AI service request failed (HTTP {response.status}). Please try again later."
+            data = await response.json()
+            if data.get("error"):
+                return None, "AI provider returned an error. Check model availability and account limits."
+            return data, None
 
     async def generate_content(
-        self,
-        prompt: str,
-        image_path: Optional[str] = None,
-        system_prompt: Optional[str] = None,
-        response_mime_type: Optional[str] = None,
-        response_schema: Optional[types.Schema] = None,
-        available_emotes: Optional[List[str]] = None,
-        safety_settings: Optional[List[Dict]] = None,
-        include_thoughts: bool = False,
-        thinking_level: Optional[str] = None,
-        enable_web_search: bool = False,
-    ) -> Tuple[Optional[str], Optional[str]]:
-        """Generate content using the Gemini API asynchronously.
-
-        Args:
-            prompt: The text prompt to send to the model
-            image_path: Optional path to an image file to include with the prompt
-            system_prompt: Optional system prompt to set context for the model
-            response_mime_type: Optional MIME type for the response format
-            response_schema: Optional schema to structure the response
-            available_emotes: Optional list of available emotes for chat simulations
-            safety_settings: Optional safety settings for content generation
-            include_thoughts: Whether to include model thinking in the response
-            thinking_level: Optional model reasoning level (minimal, low, medium, or high)
-            enable_web_search: Whether to enable Google search tool for web lookups
-
-        Returns:
-            Tuple of (response_text, error_message). Only one will be non-None.
-        """
-        uploaded_file_name: str | None = None
+        self, prompt, image_path=None, system_prompt=None, response_mime_type=None,
+        response_schema=None, available_emotes=None,
+        enable_web_search=False,
+    ):
+        """Return (text, error); unsupported features are never silently retried."""
         try:
-            # Prepare debug data if debug mode is enabled
-            debug_data = {
-                "input": {
-                    "prompt": prompt,
-                    "system_prompt": system_prompt,
-                    "image_path": image_path,
-                    "response_mime_type": response_mime_type,
-                    "available_emotes": available_emotes,
-                    "enable_web_search": enable_web_search,
-                }
-            }
-
-            # Prepare parts and config
-            parts = []
-            image_added = False
-
-            # Add image if provided
+            search = enable_web_search and self.web_search != "off"
+            if search and self.web_search == "unsupported":
+                return None, "Web search is not configured for this endpoint. Set ai_web_search to openrouter, openai, or off."
+            responses = search and self.web_search == "openai"
+            instructions = system_prompt or ""
+            if available_emotes:
+                instructions += "\nAvailable emotes: " + json.dumps(available_emotes)
+            format_spec = None
+            if response_schema or response_mime_type == "application/json":
+                instructions += "\nReturn only a JSON object."
+                if response_schema:
+                    instructions += "\nRequired JSON schema: " + json.dumps(response_schema)
+                if self.structured_output == "json_schema" and response_schema:
+                    format_spec = {
+                        "type": "json_schema", "name": "response",
+                        "strict": True, "schema": response_schema,
+                    }
+                elif self.structured_output != "prompt":
+                    format_spec = {"type": "json_object"}
+            content = [{"type": "input_text" if responses else "text",
+                        "text": prompt or "Please analyze this content."}]
             if image_path:
-                self.logger.info(f"Processing image for Gemini API: {image_path}")
                 try:
-                    file = await self.upload_file(image_path)
-                    if file:
-                        uploaded_file_name = getattr(file, "name", None)
-                        parts.append(
-                            types.Part.from_uri(
-                                file_uri=file.uri,
-                                mime_type=file.mime_type,
-                            )
-                        )
-                        self.logger.info(
-                            f"Added image to prompt with mime_type: {file.mime_type}"
-                        )
-                        image_added = True
-
-                        # Copy image to debug folder if debug mode is enabled
-                        if self.debug_mode:
-                            debug_image_path = (
-                                self.debug_folder
-                                / f"debug_image_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-                            )
-                            await asyncio.to_thread(
-                                shutil.copy2, image_path, debug_image_path
-                            )
-                            debug_data["input"]["debug_image_path"] = str(
-                                debug_image_path
-                            )
-                    else:
-                        self.logger.warning(
-                            "Failed to upload image, continuing with text-only request"
-                        )
-                except Exception as e:
-                    self.logger.error(f"Error adding image to prompt: {e}")
-                    self.logger.warning("Continuing with text-only request")
-
-            # Add prompt text
-            if prompt:
-                self.logger.info("Adding text prompt (%s characters)", len(prompt))
-                parts.append(types.Part.from_text(text=prompt))
-            elif not image_added:
-                # If there's no prompt and image upload failed, add a default prompt
-                default_prompt = "Please analyze this content."
-                self.logger.info(f"Adding default text prompt: {default_prompt}")
-                parts.append(types.Part.from_text(text=default_prompt))
-
-            # Ensure parts list is not empty
-            if not parts:
-                self.logger.error("No content parts available for the request")
-                return None, "No content was available for the AI request."
-
-            # Create content
-            contents = [
-                types.Content(
-                    role="user",
-                    parts=parts,
-                ),
-            ]
-
-            # Generate content config
-            # Gemini 3.x models use thinking levels and no longer recommend
-            # sampling parameters such as temperature.
-            config_kwargs = {}
-            if not self.model.startswith("gemini-3"):
-                config_kwargs["temperature"] = 0.7
-            # This helper only uses server-side tools such as Google Search, not
-            # Python callables that require the SDK's automatic function-calling
-            # loop. Disabling AFC keeps direct one-shot requests supported and
-            # avoids the SDK warning recommending the stateful Chat API.
-            config_kwargs["automatic_function_calling"] = (
-                types.AutomaticFunctionCallingConfig(disable=True)
-            )
-            generate_content_config = types.GenerateContentConfig(**config_kwargs)
-
-            # Set up thinking config if requested. include_thoughts controls
-            # returned thought summaries; thinking_level controls reasoning effort.
-            if include_thoughts or thinking_level:
-                thinking = types.ThinkingConfig(
-                    include_thoughts=include_thoughts,
-                    thinking_level=thinking_level,
+                    image_url = await asyncio.to_thread(self._image_url, image_path)
+                except (OSError, ValueError):
+                    return None, "Could not read the image for AI analysis."
+                content.append(
+                    {"type": "input_image", "image_url": image_url} if responses else
+                    {"type": "image_url", "image_url": {"url": image_url}}
                 )
-                generate_content_config.thinking_config = thinking
-
-            # Add web search tool if enabled
-            if enable_web_search:
-                self.logger.info("Enabling Google Search tool")
-                tools = [
-                    types.Tool(google_search=types.GoogleSearch()),
-                ]
-                generate_content_config.tools = tools
-
-                # Web search works best with more recent model versions
-                if not self.model.startswith(
-                    (
-                        "gemini-1.5-pro",
-                        "gemini-1.5-flash-latest",
-                        "gemini-2",
-                        "gemini-3",
-                    )
-                ):
-                    self.logger.warning(
-                        f"Web search works best with newer models. Current model: {self.model}. "
-                        "Consider using gemini-1.5-pro or newer."
-                    )
-
-            # Add response mime type if provided
-            if response_mime_type:
-                self.logger.info(f"Setting response MIME type: {response_mime_type}")
-                generate_content_config.response_mime_type = response_mime_type
-
-            # Add response schema if provided
-            if response_schema:
-                self.logger.info("Setting response schema for structured output")
-                generate_content_config.response_schema = response_schema
-
-            # Add system prompt if provided, possibly with emote information
-            if system_prompt:
-                modified_system_prompt = system_prompt
-
-                self.logger.info(
-                    "Setting system prompt (%s characters)", len(modified_system_prompt)
-                )
-                generate_content_config.system_instruction = [
-                    types.Part.from_text(text=modified_system_prompt),
-                ]
-
-            # Generate content asynchronously using run_in_executor
-            self.logger.info(f"Sending request to Gemini API using model: {self.model}")
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
-                model=self.model,
-                contents=contents,
-                config=generate_content_config,
-            )
-            self.logger.debug("Received response object from Gemini API")
-
-            self.logger.info("Received response from Gemini API")
-
-            response_text = getattr(response, "text", "")
-
-            # Handle blank responses from the API
-            if not response_text or not response_text.strip():
-                message = (
-                    "The Gemini API returned an empty response. This might happen if the free tier limit "
-                    "was reached or the service had trouble generating a reply."
-                )
-                self.logger.error(message)
-                if self.debug_mode:
-                    debug_data["error"] = message
-                    await self._save_debug_info(debug_data)
-                return None, message
-
-            # Save debug information if debug mode is enabled
-            if self.debug_mode:
-                debug_data["output"] = {
-                    "text": response_text,
-                    "model": self.model,
-                    "response_dict": await asyncio.to_thread(response.to_json_dict),
-                }
-                await self._save_debug_info(debug_data)
-
-            return response_text, None
-        except Exception as e:
-            message = str(e)
-            self.logger.error(f"Error generating content: {message}")
-
-            user_message = "Gemini API error."
-            lowered = message.lower()
-            if "quota" in lowered or "rate limit" in lowered or "429" in lowered:
-                user_message = "Gemini free API usage limit or rate limit reached. Please try again later."
-            elif not message.strip():
-                user_message = "Gemini API returned a blank error. Please try again."
+            payload = {"model": self.search_model if search else self.model}
+            # Reasoning is opt-in since many otherwise compatible models reject it.
+            effort = self.reasoning_effort
+            if responses:
+                payload.update(input=[{"role": "user", "content": content}],
+                               instructions=instructions, tools=[{"type": "web_search"}])
+                if format_spec:
+                    payload["text"] = {"format": format_spec}
+                if effort:
+                    payload["reasoning"] = {"effort": effort}
             else:
-                # Keep the message short for the user
-                user_message = f"Gemini error: {message.splitlines()[0]}"
-
+                payload["messages"] = [
+                    {"role": "system", "content": instructions},
+                    {"role": "user", "content": content},
+                ]
+                if format_spec:
+                    if format_spec["type"] == "json_schema":
+                        payload["response_format"] = {
+                            "type": "json_schema",
+                            "json_schema": {k: v for k, v in format_spec.items() if k != "type"},
+                        }
+                    else:
+                        payload["response_format"] = format_spec
+                if effort:
+                    payload["reasoning_effort"] = effort
+                if search:
+                    payload["plugins"] = [{"id": "web"}]
             if self.debug_mode:
-                debug_data["error"] = message
-                await self._save_debug_info(debug_data)
+                self.logger.debug("AI model=%s search=%s structured=%s image=%s",
+                                  payload["model"], bool(search), bool(format_spec), bool(image_path))
+            data, error = await self._post("responses" if responses else "chat/completions", payload)
+            if error:
+                return None, error
+            if responses:
+                if data.get("status") in {"failed", "incomplete"}:
+                    return None, "AI response was incomplete. Please try again."
+                parts = [part for item in data.get("output", []) if item.get("type") == "message"
+                         for part in item.get("content", [])]
+                refused = any(part.get("type") == "refusal" for part in parts)
+                text = "\n".join(part["text"] for part in parts if part.get("type") == "output_text")
+            else:
+                choices = data.get("choices") or []
+                choice = choices[0] if choices else {}
+                message = choice.get("message") or {}
+                refused = message.get("refusal") or choice.get("finish_reason") == "content_filter"
+                if choice.get("finish_reason") == "length":
+                    return None, "AI response was cut off by the model's output limit. Try a shorter request."
+                text = message.get("content")
+            if refused:
+                return None, "The selected AI model declined this request."
+            if not isinstance(text, str) or not text.strip():
+                return None, "AI returned an empty response. Try another model or request."
+            return text, None
+        except (aiohttp.ClientError, asyncio.TimeoutError):
+            return None, "Could not reach the AI service or the request timed out. Please try again."
+        except Exception as error:
+            self.logger.warning("AI request failed (%s)", type(error).__name__)
+            return None, "AI request failed. Check the model and API configuration."
 
-            return None, user_message
-        finally:
-            if uploaded_file_name:
-                await self._delete_uploaded_file(uploaded_file_name)
 
-    async def _delete_uploaded_file(self, name: str) -> None:
-        delete = getattr(getattr(self.client, "files", None), "delete", None)
-        if not callable(delete):
-            self.logger.debug("Gemini SDK does not expose remote file deletion")
-            return
-        try:
-            result = await asyncio.to_thread(delete, name=name)
-            if inspect.isawaitable(result):
-                await result
-        except Exception:
-            self.logger.warning(
-                "Could not delete temporary Gemini file %s", name, exc_info=True
-            )
-
-
-_AI_HELPER_CACHE_ATTRIBUTE = "_ai_helper_cache"
-
-
-async def close_ai_helpers(bot) -> None:
-    """Close and clear AI helpers cached on a bot instance."""
-    cache = getattr(bot, _AI_HELPER_CACHE_ATTRIBUTE, None)
-    if not cache:
-        return
+async def close_ai_helpers(bot):
+    cache = getattr(bot, "_ai_helper_cache", {})
     helpers = list(cache.values())
     cache.clear()
     for helper in helpers:
-        try:
-            await helper.close()
-        except Exception:
-            helper.logger.exception("Could not close cached AI helper")
+        await helper.close()
 
 
-# Helper function to load the AI helper from config
-def load_ai_helper_from_config(
-    bot, config_path: str = "config/config.json", logger=None
-) -> Optional[AIHelper]:
-    """Load AI helper from config file"""
+def load_ai_helper_from_config(bot, config_path="config/config.json", logger=None):
+    logger = logger or logging.getLogger("discord_bot")
     try:
-        if logger:
-            logger.info(f"Loading AI helper from config: {config_path}")
-
         if config_path == "config/config.json" and hasattr(bot, "config"):
             config = bot.config
         else:
-            with open(config_path, "r", encoding="utf-8") as file:
-                config = json.load(file)
-
-        api_key = config.get("gemini_api_key")
-        model = config.get("gemini_model") or "gemini-1.5-flash-002"
-        debug_mode = config.get("gemini_debug", False)
-
-        if not api_key:
-            if logger:
-                logger.error("No Gemini API key found in config")
-            print("No Gemini API key found in config")
+            config = json.loads(Path(config_path).read_text(encoding="utf-8"))
+        options = {
+            "api_key": config.get("ai_api_key") or os.getenv("AI_API_KEY"),
+            "model": config.get("ai_model"),
+            "base_url": config.get("ai_base_url") or "https://openrouter.ai/api/v1",
+            "web_search": config.get("ai_web_search", "auto"),
+            "structured_output": config.get("ai_structured_output", "json_schema"),
+            "reasoning_effort": config.get("ai_reasoning_effort") or None,
+            "search_model": config.get("ai_search_model") or None,
+            "debug_mode": config.get("ai_debug", False),
+        }
+        if not options["api_key"] or not options["model"]:
+            logger.error("Configure ai_api_key (or AI_API_KEY) and ai_model to enable AI")
             return None
-
-        if logger:
-            logger.info(
-                f"AI helper initialized with model: {model}, debug mode: {debug_mode}"
-            )
-
-        cache = getattr(bot, _AI_HELPER_CACHE_ATTRIBUTE, None)
+        cache = getattr(bot, "_ai_helper_cache", None)
         if cache is None:
-            cache = {}
-            setattr(bot, _AI_HELPER_CACHE_ATTRIBUTE, cache)
-        cache_key = (str(config_path), api_key, model, debug_mode)
-        helper = cache.get(cache_key)
-        if helper is None:
-            helper = AIHelper(
-                bot=bot,
-                api_key=api_key,
-                model=model,
-                logger=logger,
-                debug_mode=debug_mode,
-            )
-            cache[cache_key] = helper
-        return helper
-    except Exception as e:
-        if logger:
-            logger.error(f"Error loading AI helper from config: {e}")
-        print(f"Error loading AI helper from config: {e}")
+            cache = bot._ai_helper_cache = {}
+        key = (str(config_path), *options.values())
+        if key not in cache:
+            cache[key] = AIHelper(bot, logger=logger, **options)
+        return cache[key]
+    except Exception as error:
+        logger.error("Could not load AI configuration (%s)", type(error).__name__)
         return None
