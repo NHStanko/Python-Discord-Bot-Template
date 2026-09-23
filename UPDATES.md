@@ -2,6 +2,13 @@
 
 Here is the most recent update made on this template.
 
+### Chatterbox Nano TTS (22 September 2026)
+
+* Replaced Pocket TTS with CPU-only Chatterbox Nano and saved voice profiles.
+* Existing voices rebuild automatically from retained samples on first use.
+* Preserved reference pauses, validated reference length, and reduced speech splits.
+* Added peak limiting to voice playback and multi-voice sequences.
+
 ### Configurable AI API (22 September 2026)
 
 * Replaced the Google AI SDK with asynchronous OpenAI-compatible API requests.

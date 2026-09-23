@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 VOICE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
+VOICE_STATE_FILENAME = "chatterbox-nano-v1.pt"
 
 
 @dataclass(frozen=True)
@@ -235,7 +236,14 @@ class VoiceStore:
 
     def state_path(self, name: str) -> Path:
         voice = self.get_voice(name)
-        path = self.voices_dir / voice.slug / "voice.safetensors"
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT state_filename FROM voices WHERE slug = ?", (voice.slug,)
+            ).fetchone()
+        filename = row["state_filename"]
+        if filename not in {VOICE_STATE_FILENAME, "voice.safetensors"}:
+            raise FileNotFoundError(f"Voice {voice.slug} has not been trained yet")
+        path = self.voices_dir / voice.slug / filename
         if not path.is_file():
             raise FileNotFoundError(f"Voice {voice.slug} has not been trained yet")
         return path
@@ -247,7 +255,7 @@ class VoiceStore:
             db.execute(
                 """UPDATE voices SET state_filename = ?, needs_retrain = 0,
                    updated_at = ? WHERE slug = ?""",
-                ("voice.safetensors", now, voice.slug),
+                (VOICE_STATE_FILENAME, now, voice.slug),
             )
 
     def set_volume(self, name: str, volume: float) -> VoiceProfile:

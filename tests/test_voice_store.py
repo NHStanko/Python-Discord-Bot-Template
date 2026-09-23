@@ -11,7 +11,7 @@ def test_voice_lifecycle_erases_all_files(tmp_path: Path) -> None:
     voice = store.create_voice("Nick Calm", created_by=123)
     first = store.add_sample(voice.slug, "first.wav", b"sample-one")
     second = store.add_sample(voice.slug, "second.mp3", b"sample-two")
-    (store.voices_dir / voice.slug / "voice.safetensors").write_bytes(b"state")
+    (store.voices_dir / voice.slug / "chatterbox-nano-v1.pt").write_bytes(b"state")
     store.mark_trained(voice.slug)
 
     assert first.is_file() and second.is_file()
@@ -35,7 +35,7 @@ def test_remove_one_sample_marks_voice_for_retrain(tmp_path: Path) -> None:
     voice = store.create_voice("xqc", created_by=123)
     first = store.add_sample(voice.slug, "one.wav", b"one")
     store.add_sample(voice.slug, "two.wav", b"two")
-    (store.voices_dir / voice.slug / "voice.safetensors").write_bytes(b"state")
+    (store.voices_dir / voice.slug / "chatterbox-nano-v1.pt").write_bytes(b"state")
     store.mark_trained(voice.slug)
 
     removed = store.remove_sample(voice.slug, store.list_samples(voice.slug)[0].id)

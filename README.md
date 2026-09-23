@@ -134,7 +134,7 @@ Feature requirements:
 * Provider moderation, model access, context limits, rate limits, and billing
   still apply. Search can incur additional charges. Refusals and unsupported
   feature errors are reported without retrying with reduced capabilities.
-* Pocket TTS voice training and ordinary speech remain local and independent
+* Chatterbox Nano voice training and ordinary speech remain local and independent
   of the AI provider. Only the game-aware generated script uses this API.
 
 `ai_debug` logs request metadata only, not private prompts, images, responses,
@@ -156,9 +156,9 @@ Discord messages, activity names, and other runtime values are passed separately
 as untrusted data. Keep response schemas, authorization, and runtime control flow
 in Python rather than adding them to prompt templates.
 
-## Voice cloning (Pocket TTS)
+## Voice cloning (Chatterbox Nano)
 
-The bot includes global reusable voice profiles powered by Pocket TTS. The
+The bot includes global reusable voice profiles powered by Chatterbox Nano. The
 runtime uses one CPU model and serializes inference because the model state is
 not thread-safe.
 
@@ -187,11 +187,29 @@ Reference recordings are retained under `tts.data_dir` and should be treated as
 sensitive biometric-like data. The directory is ignored by Git; mount `/data`
 as a persistent volume when using Docker.
 
-Pocket TTS requires Python 3.10-3.14, FFmpeg, and access to its gated model
-weights. Accept the model terms on Hugging Face, then authenticate with
-`hf auth login` or provide `HF_TOKEN`. Attachment-size and sample-count limits
-can be set in `config.json` or overridden with `MAX_VOICE_ATTACHMENT_BYTES`
-and `MAX_SAMPLES_PER_VOICE`.
+Chatterbox Nano runs entirely on CPU and generates English speech. Use Python
+3.12, FFmpeg, and the pinned dependencies in `requirements.txt`. Docker installs
+matching CPU-only PyTorch and torchaudio builds. The first training or synthesis
+request downloads the model weights; retain `/data/huggingface` between restarts.
+If Hugging Face requests authentication, provide `HF_TOKEN` with model access.
+The old `tts.language` / `POCKET_TTS_LANGUAGE` setting no longer applies.
+CPU inference uses eight threads by default; adjust `tts.cpu_threads` or
+`TTS_CPU_THREADS` to suit the hosting machine.
+
+Training prepares and saves a reusable voice profile; it does not fine-tune the
+model. Use clean speech from one speaker, preferably a continuous 6-15 second
+recording without music. Combined references must exceed 5 seconds after leading
+silence removal. Multiple samples share a 15-second reference budget. Natural
+pauses are preserved, and output volume is peak-limited to prevent clipping.
+
+Existing Pocket profiles automatically rebuild from retained recordings on their
+first use. Names, samples, and volume settings remain intact; the original Pocket
+state is retained. That first request takes longer. If the reference is too short,
+add a longer recording with `/tts samples add` and run `/tts retrain`. You can also
+run `/tts retrain` ahead of time to migrate a voice explicitly.
+
+Attachment-size and sample-count limits can be set in `config.json` or overridden
+with `MAX_VOICE_ATTACHMENT_BYTES` and `MAX_SAMPLES_PER_VOICE`.
 
 
 ## Built With

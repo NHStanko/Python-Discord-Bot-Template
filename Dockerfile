@@ -19,7 +19,7 @@ RUN python -m pip install --no-cache-dir \
         wheel \
     && python -m pip install --no-cache-dir \
         --index-url https://download.pytorch.org/whl/cpu \
-        "torch>=2.5,<2.15" \
+        "torch==2.6.0" "torchaudio==2.6.0" \
     && python -m pip install --no-cache-dir \
     -r requirements.txt
 

@@ -4,37 +4,49 @@ import asyncio
 import re
 import subprocess
 import tempfile
+import wave
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from helpers.voice_store import VoiceStore
+from helpers.voice_store import VOICE_STATE_FILENAME, VoiceStore
 
-TTS_CHUNK_WORDS = 32
-TTS_MAX_TOKENS = 40
+TTS_CHUNK_WORDS = 60
 TTS_SENTENCE_PAUSE = 0.10
 TTS_PARAGRAPH_PAUSE = 0.25
-TTS_FRAMES_AFTER_EOS = 1
+# Flush and compensate the 5 ms lookahead, including on FFmpeg 4 (which has no
+# alimiter latency option). Disable makeup gain to preserve saved volume levels.
+TTS_LIMITER = (
+    "apad=pad_dur=0.005,alimiter=limit=0.95:level=false:attack=5,"
+    "atrim=start=0.005,asetpts=PTS-STARTPTS"
+)
 _SENTENCE_BOUNDARY = re.compile(r"(?:(?<=[.!?])|(?<=[.!?][\"']))\s+")
 
 
-class PocketTTSService:
-    """Serialize Pocket TTS access because its model state is not thread-safe."""
+class ChatterboxTTSService:
+    """Serialize CPU Nano inference and switching its active voice conditionals."""
 
-    def __init__(self, store: VoiceStore, language: str = "english"):
+    def __init__(self, store: VoiceStore, cpu_threads: int = 8):
+        if cpu_threads < 1:
+            raise ValueError("TTS CPU threads must be at least 1")
         self.store = store
-        self.language = language
+        self.cpu_threads = cpu_threads
         self._model: Any = None
         self._states: dict[str, Any] = {}
         self._lock = asyncio.Lock()
 
     def _get_model(self) -> Any:
         if self._model is None:
-            from pocket_tts import TTSModel
+            import torch
+            from chatterbox.tts_turbo import ChatterboxTurboTTS
 
-            self._model = TTSModel.load_model(language=self.language)
-            self._model.to("cpu")
+            torch.set_num_threads(self.cpu_threads)
+            self._model = ChatterboxTurboTTS.from_pretrained(device="cpu", nano=True)
         return self._model
+
+    @staticmethod
+    def playback_options(volume: float) -> str:
+        return f"-af volume={volume:.2f},{TTS_LIMITER}"
 
     @staticmethod
     def _validate_youtube_request(url: str, start: int, duration: int) -> str:
@@ -112,13 +124,12 @@ class PocketTTSService:
         command = ["ffmpeg", "-y"]
         for sample in samples:
             command.extend(["-i", str(sample)])
-        seconds_per_sample = 30 / len(samples)
+        seconds_per_sample = 15 / len(samples)
         filters = [
             f"[{index}:a]aformat=sample_fmts=fltp:sample_rates=24000:"
             "channel_layouts=mono,"
             "silenceremove=start_periods=1:start_duration=0.05:"
-            "start_threshold=-50dB:stop_periods=1:stop_duration=0.10:"
-            "stop_threshold=-50dB,"
+            "start_threshold=-50dB,"
             "loudnorm=I=-20:TP=-2:LRA=11,"
             "aformat=sample_fmts=fltp:sample_rates=24000:channel_layouts=mono,"
             f"apad=pad_dur=0.1,atrim=duration={seconds_per_sample},"
@@ -130,7 +141,7 @@ class PocketTTSService:
             filters + [f"{inputs}concat=n={len(samples)}:v=0:a=1[out]"]
         )
         command.extend(
-            ["-filter_complex", filter_graph, "-map", "[out]", "-t", "30", str(destination)]
+            ["-filter_complex", filter_graph, "-map", "[out]", "-t", "15", str(destination)]
         )
         result = subprocess.run(command, capture_output=True, text=True, timeout=120)
         if result.returncode:
@@ -142,16 +153,28 @@ class PocketTTSService:
             raise ValueError(f"FFmpeg could not process the attachment: {detail}")
 
     def _train_sync(self, slug: str) -> None:
-        from pocket_tts import export_model_state
+        import torch
 
-        model = self._get_model()
         voice_dir = self.store.voices_dir / slug
-        combined = voice_dir / "conditioning.wav"
-        pending = voice_dir / "voice.pending"
+        combined = voice_dir / "chatterbox-reference.wav"
+        pending = voice_dir / "chatterbox-nano-v1.pending"
         self._combine_samples(self.store.sample_paths(slug), combined)
-        state = model.get_state_for_audio_prompt(combined, truncate=True)
-        export_model_state(state, pending)
-        pending.replace(voice_dir / "voice.safetensors")
+        with wave.open(str(combined), "rb") as reference:
+            duration = reference.getnframes() / reference.getframerate()
+        if duration <= 5:
+            raise ValueError(
+                "Chatterbox needs more than 5 seconds of reference audio. "
+                "Add a clean 6-15 second speech recording, then retrain."
+            )
+        model = self._get_model()
+        with torch.inference_mode():
+            model.prepare_conditionals(str(combined))
+        state = model.conds
+        try:
+            state.save(pending)
+            pending.replace(voice_dir / VOICE_STATE_FILENAME)
+        finally:
+            pending.unlink(missing_ok=True)
         self.store.mark_trained(slug)
         self._states[slug] = state
 
@@ -163,10 +186,19 @@ class PocketTTSService:
     @staticmethod
     def _split_long_sentence(sentence: str, max_words: int) -> list[str]:
         words = sentence.split()
-        return [
-            " ".join(words[index : index + max_words])
-            for index in range(0, len(words), max_words)
-        ]
+        chunks = []
+        while len(words) > max_words:
+            # Prefer a clause boundary over restarting speech mid-phrase.
+            boundary = next(
+                (index for index in range(max_words, max_words // 2, -1)
+                 if words[index - 1].endswith((",", ";", ":"))),
+                max_words,
+            )
+            chunks.append(" ".join(words[:boundary]))
+            words = words[boundary:]
+        if words:
+            chunks.append(" ".join(words))
+        return chunks
 
     @classmethod
     def _speech_chunks(
@@ -207,51 +239,58 @@ class PocketTTSService:
         return chunks
 
     @staticmethod
-    def _trim_audio_boundaries(audio: Any, sample_rate: int) -> Any:
-        """Remove model-added boundary silence while retaining a short safety pad."""
+    def _prepare_audio(audio: Any, sample_rate: int) -> Any:
+        """Keep natural pauses and soften only the outer 5 ms to prevent clicks."""
         import numpy as np
 
-        samples = audio.detach().cpu().numpy().reshape(-1)
-        if not samples.size:
-            return samples
-        audible = np.flatnonzero(np.abs(samples) >= 0.001)
-        if not audible.size:
-            return samples
-        padding = int(sample_rate * 0.04)
-        start = max(0, int(audible[0]) - padding)
-        end = min(samples.size, int(audible[-1]) + padding + 1)
-        return samples[start:end]
+        samples = audio.detach().cpu().numpy().reshape(-1).copy()
+        if not samples.size or not np.isfinite(samples).all():
+            raise ValueError("Chatterbox generated empty or invalid audio; try again")
+        fade = min(int(sample_rate * 0.005), samples.size // 2)
+        if fade:
+            ramp = np.linspace(0, 1, fade, dtype=samples.dtype)
+            samples[:fade] *= ramp
+            samples[-fade:] *= ramp[::-1]
+        peak = float(np.max(np.abs(samples)))
+        if peak > 0.95:
+            samples *= 0.95 / peak
+        return samples
 
     def _synthesize_sync(self, slug: str, text: str, output: Path) -> None:
         import numpy as np
         import scipy.io.wavfile
+        import torch
+        from chatterbox.tts_turbo import Conditionals
 
-        model = self._get_model()
-        state = self._states.get(slug)
-        if state is None:
-            state = model.get_state_for_audio_prompt(self.store.state_path(slug))
-            self._states[slug] = state
         chunks = self._speech_chunks(text)
         if not chunks:
             raise ValueError("Text cannot be empty")
+        state = self._states.get(slug)
+        if state is None:
+            state_path = self.store.state_path(slug)
+            if state_path.name == "voice.safetensors":
+                # Pocket embeddings cannot be reused; rebuild from retained samples.
+                self._train_sync(slug)
+                state = self._states[slug]
+            else:
+                state = Conditionals.load(state_path, map_location="cpu").to("cpu")
+            self._states[slug] = state
+        model = self._get_model()
+        model.conds = state
 
         rendered = []
         for chunk, pause_after in chunks:
-            audio = model.generate_audio(
-                state,
-                chunk,
-                max_tokens=TTS_MAX_TOKENS,
-                frames_after_eos=TTS_FRAMES_AFTER_EOS,
-            )
-            rendered.append(self._trim_audio_boundaries(audio, model.sample_rate))
+            with torch.inference_mode():
+                audio = model.generate(chunk)
+            rendered.append(self._prepare_audio(audio, model.sr))
             if pause_after:
                 rendered.append(
                     np.zeros(
-                        int(model.sample_rate * pause_after),
+                        int(model.sr * pause_after),
                         dtype=rendered[-1].dtype,
                     )
                 )
-        scipy.io.wavfile.write(output, model.sample_rate, np.concatenate(rendered))
+        scipy.io.wavfile.write(output, model.sr, np.concatenate(rendered))
 
     async def synthesize(self, name: str, text: str) -> Path:
         slug = self.store.normalize_name(name)
@@ -300,7 +339,7 @@ class PocketTTSService:
 
         inputs = "".join(f"[a{index}]" for index in range(len(parts)))
         filter_graph = ";".join(
-            filters + [f"{inputs}concat=n={len(parts)}:v=0:a=1[out]"]
+            filters + [f"{inputs}concat=n={len(parts)}:v=0:a=1,{TTS_LIMITER}[out]"]
         )
         command.extend(
             ["-filter_complex", filter_graph, "-map", "[out]", str(destination)]

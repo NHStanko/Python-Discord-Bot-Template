@@ -22,7 +22,7 @@ from helpers.tts_sequence import (
     SpeechSegment,
     parse_tts_sequence,
 )
-from helpers.tts_service import PocketTTSService
+from helpers.tts_service import ChatterboxTTSService
 from helpers.voice_store import VoiceStore
 
 logger = logging.getLogger("discord_bot")
@@ -200,11 +200,11 @@ class TTS(commands.Cog, name="tts"):
                 "MAX_SAMPLES_PER_VOICE", tts_config.get("max_samples_per_voice", 10)
             )
         )
-        language = os.getenv(
-            "POCKET_TTS_LANGUAGE", tts_config.get("language", "english")
-        )
         self.store = VoiceStore(data_dir)
-        self.tts = PocketTTSService(self.store, language)
+        self.tts = ChatterboxTTSService(
+            self.store,
+            cpu_threads=int(os.getenv("TTS_CPU_THREADS", tts_config.get("cpu_threads", 8))),
+        )
         self.ai_helper: AIHelper | None = None
         self._brock_locks: dict[int, asyncio.Lock] = {}
 
@@ -332,7 +332,7 @@ class TTS(commands.Cog, name="tts"):
 
                 client.play(
                     discord.FFmpegPCMAudio(
-                        str(output), options=f"-af volume={profile.volume:.2f}"
+                        str(output), options=self.tts.playback_options(profile.volume)
                     ),
                     after=finished,
                 )
@@ -522,7 +522,7 @@ class TTS(commands.Cog, name="tts"):
 
             client.play(
                 discord.FFmpegPCMAudio(
-                    str(output), options=f"-af volume={profile.volume:.2f}"
+                    str(output), options=self.tts.playback_options(profile.volume)
                 ),
                 after=finished,
             )
@@ -753,7 +753,7 @@ class TTS(commands.Cog, name="tts"):
             await interaction.edit_original_response(
                 content=(
                     "🧠 Building the voice profile... The first run may take longer "
-                    "while Pocket TTS downloads and loads its model."
+                    "while Chatterbox Nano downloads and loads its model."
                 )
             )
             await self.tts.train(name)
