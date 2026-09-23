@@ -159,8 +159,9 @@ in Python rather than adding them to prompt templates.
 ## Voice cloning (Chatterbox Nano)
 
 The bot includes global reusable voice profiles powered by Chatterbox Nano. The
-runtime uses one CPU model and serializes inference because the model state is
-not thread-safe.
+runtime keeps one CPU model in a separate worker process and serializes inference
+because the model state is not thread-safe. Downloads and model initialization
+run in that worker too, so they do not share Discord's Python interpreter.
 
 The Brock game-aware TTS event requires the privileged **Presence Intent** to
 be enabled for the bot in the Discord Developer Portal. It uses the configured
@@ -195,6 +196,10 @@ If Hugging Face requests authentication, provide `HF_TOKEN` with model access.
 The old `tts.language` / `POCKET_TTS_LANGUAGE` setting no longer applies.
 CPU inference uses eight threads by default; adjust `tts.cpu_threads` or
 `TTS_CPU_THREADS` to suit the hosting machine.
+Commands report when TTS is busy instead of silently queueing behind an existing
+job. Voice-name autocomplete remains available while the model is loading. A
+first download can take several minutes; keep the Hugging Face cache mounted
+and wait for the current job to finish before submitting another.
 
 Training prepares and saves a reusable voice profile; it does not fine-tune the
 model. Use clean speech from one speaker, preferably a continuous 6-15 second

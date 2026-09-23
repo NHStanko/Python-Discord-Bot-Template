@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import subprocess
+import sys
 import tempfile
 import wave
 from pathlib import Path
@@ -34,6 +36,68 @@ class ChatterboxTTSService:
         self._model: Any = None
         self._states: dict[str, Any] = {}
         self._lock = asyncio.Lock()
+        self._worker: asyncio.subprocess.Process | None = None
+        self._closed = False
+
+    @property
+    def busy(self) -> bool:
+        return self._lock.locked()
+
+    async def _stop_worker(self) -> None:
+        worker, self._worker = self._worker, None
+        if worker is None:
+            return
+        if worker.returncode is None:
+            try:
+                worker.terminate()
+            except ProcessLookupError:
+                pass
+        try:
+            await asyncio.wait_for(worker.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            try:
+                worker.kill()
+            except ProcessLookupError:
+                pass
+            await worker.wait()
+
+    async def close(self) -> None:
+        self._closed = True
+        await self._stop_worker()
+
+    async def _run_model_job(self, operation: str, *args: str) -> None:
+        """Keep imports, downloads, and native model calls out of Discord's process.
+
+        The caller holds _lock, so one persistent worker can safely retain its
+        model and per-voice cache. A cancelled job must stop before releasing it.
+        """
+        if self._closed:
+            raise RuntimeError("TTS service is closed")
+        if self._worker is None or self._worker.returncode is not None:
+            self._worker = await asyncio.create_subprocess_exec(
+                sys.executable, "-m", "helpers.tts_worker",
+                "--data-dir", str(self.store.data_dir),
+                "--cpu-threads", str(self.cpu_threads),
+                cwd=Path(__file__).resolve().parent.parent,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+            )
+        if self._closed:
+            await self._stop_worker()
+            raise RuntimeError("TTS service is closed")
+        worker = self._worker
+        try:
+            worker.stdin.write((json.dumps({"operation": operation, "args": args}) + "\n").encode())
+            await worker.stdin.drain()
+            line = await worker.stdout.readline()
+            if not line:
+                raise RuntimeError("TTS worker stopped unexpectedly; check the bot logs and retry")
+            result = json.loads(line)
+        except BaseException:
+            await self._stop_worker()
+            raise
+        if "error" in result:
+            raise ValueError(result["error"])
 
     def _get_model(self) -> Any:
         if self._model is None:
@@ -181,7 +245,7 @@ class ChatterboxTTSService:
     async def train(self, name: str) -> None:
         slug = self.store.normalize_name(name)
         async with self._lock:
-            await asyncio.to_thread(self._train_sync, slug)
+            await self._run_model_job("train", slug)
 
     @staticmethod
     def _split_long_sentence(sentence: str, max_words: int) -> list[str]:
@@ -301,9 +365,9 @@ class ChatterboxTTSService:
         handle.close()
         try:
             async with self._lock:
-                await asyncio.to_thread(self._synthesize_sync, slug, text, output)
+                await self._run_model_job("synthesize", slug, text, str(output))
             return output
-        except Exception:
+        except BaseException:
             output.unlink(missing_ok=True)
             raise
 
@@ -371,5 +435,8 @@ class ChatterboxTTSService:
     async def delete(self, name: str) -> None:
         slug = self.store.normalize_name(name)
         async with self._lock:
-            self.store.delete_voice(slug)
-            self._states.pop(slug, None)
+            await self._run_model_job("delete", slug)
+
+    def _delete_sync(self, slug: str) -> None:
+        self.store.delete_voice(slug)
+        self._states.pop(slug, None)

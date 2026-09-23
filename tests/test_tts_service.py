@@ -115,6 +115,17 @@ def nano_runtime(monkeypatch):
     monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(
         inference_mode=nullcontext, set_num_threads=lambda threads: None,
     ))
+
+    # Exercise the model logic in this process with the fake runtime. Separate
+    # worker tests cover the real subprocess transport and cancellation.
+    async def inline_job(self, operation, *args):
+        if operation == "synthesize":
+            slug, text, output = args
+            self._synthesize_sync(slug, text, Path(output))
+        else:
+            getattr(self, f"_{operation}_sync")(*args)
+
+    monkeypatch.setattr(ChatterboxTTSService, "_run_model_job", inline_job)
     return model
 
 

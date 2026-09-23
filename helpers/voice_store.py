@@ -34,19 +34,21 @@ class VoiceSample:
 
 
 class VoiceStore:
-    def __init__(self, data_dir: Path):
+    def __init__(self, data_dir: Path, *, cleanup: bool = True):
         self.data_dir = data_dir.resolve()
         self.voices_dir = self.data_dir / "voices"
         self.voices_dir.mkdir(parents=True, exist_ok=True)
-        for interrupted_delete in self.voices_dir.glob(".*.deleting"):
-            shutil.rmtree(interrupted_delete, ignore_errors=True)
-        for interrupted_sample_delete in self.voices_dir.glob("*/samples/.*.deleting"):
-            interrupted_sample_delete.unlink(missing_ok=True)
+        if cleanup:
+            for interrupted_delete in self.voices_dir.glob(".*.deleting"):
+                shutil.rmtree(interrupted_delete, ignore_errors=True)
+            for interrupted_sample_delete in self.voices_dir.glob("*/samples/.*.deleting"):
+                interrupted_sample_delete.unlink(missing_ok=True)
 
         self.generated_dir = self.data_dir / "generated"
         self.generated_dir.mkdir(exist_ok=True)
-        for stale_output in self.generated_dir.glob("*.wav"):
-            stale_output.unlink(missing_ok=True)
+        if cleanup:
+            for stale_output in self.generated_dir.glob("*.wav"):
+                stale_output.unlink(missing_ok=True)
 
         self.database_path = self.data_dir / "voices.sqlite3"
         self._initialize()

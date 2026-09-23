@@ -2,6 +2,13 @@
 
 Here is the most recent update made on this template.
 
+### TTS responsiveness (22 September 2026)
+
+* Isolated model downloads, loading, and inference in a persistent CPU worker.
+* Added busy responses and first-use progress messages for TTS commands.
+* Moved autocomplete database reads off the event loop and bounded their wait.
+* Added worker cancellation and shutdown cleanup without removing playing audio.
+
 ### Chatterbox Nano TTS (22 September 2026)
 
 * Replaced Pocket TTS with CPU-only Chatterbox Nano and saved voice profiles.

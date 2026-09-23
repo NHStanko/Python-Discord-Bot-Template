@@ -208,6 +208,21 @@ class TTS(commands.Cog, name="tts"):
         self.ai_helper: AIHelper | None = None
         self._brock_locks: dict[int, asyncio.Lock] = {}
 
+    async def cog_unload(self) -> None:
+        await self.tts.close()
+
+    async def tts_available(self, interaction: discord.Interaction) -> bool:
+        if not self.tts.busy:
+            return True
+        await interaction.response.send_message(
+            "TTS is busy loading its model, preparing a voice, or generating speech. "
+            "Please wait for the current job to finish, then try again. "
+            "The first use downloads the model and can take several minutes.",
+            ephemeral=True,
+            delete_after=EPHEMERAL_LIFETIME,
+        )
+        return False
+
     async def delete_original_response_later(
         self, interaction: discord.Interaction
     ) -> None:
@@ -410,9 +425,16 @@ class TTS(commands.Cog, name="tts"):
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
         typed = current.casefold()
+        try:
+            voices = await asyncio.wait_for(
+                asyncio.to_thread(self.store.list_voices), timeout=1.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning("TTS voice autocomplete database lookup timed out")
+            return []
         return [
             app_commands.Choice(name=voice.display_name, value=voice.slug)
-            for voice in self.store.list_voices()
+            for voice in voices
             if typed in voice.slug.casefold() or typed in voice.display_name.casefold()
         ][:25]
 
@@ -423,8 +445,13 @@ class TTS(commands.Cog, name="tts"):
         if not voice_name:
             return []
         try:
-            samples = self.store.list_samples(voice_name)
+            samples = await asyncio.wait_for(
+                asyncio.to_thread(self.store.list_samples, voice_name), timeout=1.0
+            )
         except (KeyError, ValueError):
+            return []
+        except asyncio.TimeoutError:
+            logger.warning("TTS sample autocomplete database lookup timed out")
             return []
         typed = current.casefold()
         return [
@@ -500,9 +527,14 @@ class TTS(commands.Cog, name="tts"):
             )
             return
 
+        if not await self.tts_available(interaction):
+            return
         await interaction.response.defer(ephemeral=True)
         output: Path | None = None
         try:
+            await interaction.edit_original_response(
+                content="Preparing speech. First use may take several minutes to download and load Chatterbox."
+            )
             profile = self.store.get_voice(voice)
             output = await self.tts.synthesize(voice, text.strip())
             channel = member.voice.channel
@@ -566,6 +598,8 @@ class TTS(commands.Cog, name="tts"):
             )
             return
 
+        if not await self.tts_available(interaction):
+            return
         try:
             segments = parse_tts_sequence(script, max_segments=20)
             random_voices = [
@@ -727,6 +761,8 @@ class TTS(commands.Cog, name="tts"):
     ) -> None:
         if not await self.require_owner(interaction):
             return
+        if not await self.tts_available(interaction):
+            return
         await interaction.response.defer(ephemeral=True)
         created = False
         try:
@@ -825,8 +861,13 @@ class TTS(commands.Cog, name="tts"):
     async def retrain(self, interaction: discord.Interaction, voice: str) -> None:
         if not await self.require_owner(interaction):
             return
+        if not await self.tts_available(interaction):
+            return
         await interaction.response.defer(ephemeral=True)
         try:
+            await interaction.edit_original_response(
+                content=f"Rebuilding `{voice}`. First use may take several minutes to download and load Chatterbox."
+            )
             await self.tts.train(voice)
             await interaction.edit_original_response(
                 content=f"Voice `{self.store.normalize_name(voice)}` was rebuilt."
@@ -899,20 +940,21 @@ class TTS(commands.Cog, name="tts"):
                 delete_after=EPHEMERAL_LIFETIME,
             )
             return
+        if not await self.tts_available(interaction):
+            return
+        await interaction.response.defer(ephemeral=True)
         try:
             slug = self.store.normalize_name(voice)
             await self.tts.delete(slug)
-            await interaction.response.send_message(
-                f"Permanently deleted `{slug}` and all of its files.",
-                ephemeral=True,
-                delete_after=EPHEMERAL_LIFETIME,
+            await interaction.edit_original_response(
+                content=f"Permanently deleted `{slug}` and all of its files.",
             )
         except Exception as exc:
-            await interaction.response.send_message(
-                f"Could not delete voice: {exc}",
-                ephemeral=True,
-                delete_after=EPHEMERAL_LIFETIME,
+            await interaction.edit_original_response(
+                content=f"Could not delete voice: {exc}",
             )
+        finally:
+            self.schedule_original_response_deletion(interaction)
 
 
 async def setup(bot: commands.Bot) -> None:
