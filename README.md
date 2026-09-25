@@ -91,6 +91,8 @@ and restart the bot:
   "ai_api_key": "YOUR_PROVIDER_KEY",
   "ai_base_url": "https://openrouter.ai/api/v1",
   "ai_model": "YOUR_OPENROUTER_MODEL_ID",
+  "ai_provider": "",
+  "ai_provider_fallbacks": true,
   "ai_search_model": "",
   "ai_web_search": "auto",
   "ai_structured_output": "json_schema",
@@ -105,6 +107,18 @@ and set `ai_model` to an OpenAI model ID available to your account. Other
 OpenAI-compatible base URLs also work for Chat Completions. Supply the base URL,
 not the full `/chat/completions` path. Only configure endpoints you trust:
 they receive the API key and message/image content.
+
+For OpenRouter, set `ai_provider` to an upstream provider slug such as
+`"anthropic"` to try that provider first for both regular and web-search
+requests. This is separate from the provider prefix in `ai_model`, which names
+the model. With `ai_provider_fallbacks: true` (the default), OpenRouter can try
+other providers serving the same model if the preferred one is unavailable.
+Set it to `false` to restrict routing to the selected provider; requests will
+fail if that provider cannot serve the model. Leave `ai_provider` blank for
+OpenRouter's default routing. These options require the OpenRouter base URL
+and do not change models or enable fallback to a different model. See
+[OpenRouter provider routing](https://openrouter.ai/docs/guides/routing/provider-selection)
+for available provider slugs and routing behavior.
 
 Alternatively, leave `ai_api_key` blank and set the `AI_API_KEY` environment
 variable. Old provider-specific keys are no longer used; replace them with

@@ -20,6 +20,7 @@ class AIHelper:
         debug_mode: bool = False, base_url: str = "https://openrouter.ai/api/v1",
         web_search: str = "auto", structured_output: str = "json_schema",
         reasoning_effort: str | None = None, search_model: str | None = None,
+        provider: str | None = None, provider_fallbacks: bool = True,
     ):
         self.bot = bot
         self.api_key = api_key
@@ -32,6 +33,18 @@ class AIHelper:
             raise ValueError("Invalid ai_web_search setting")
         if structured_output not in {"json_schema", "json_object", "prompt"}:
             raise ValueError("Invalid ai_structured_output setting")
+        if provider is not None:
+            if not isinstance(provider, str) or not provider.strip():
+                raise ValueError("ai_provider must be a nonempty OpenRouter provider slug")
+            if parsed.hostname != "openrouter.ai":
+                raise ValueError("ai_provider requires an OpenRouter API base URL")
+            provider = provider.strip()
+        if not isinstance(provider_fallbacks, bool):
+            raise ValueError("ai_provider_fallbacks must be a boolean")
+        if not provider_fallbacks and provider is None:
+            raise ValueError("ai_provider_fallbacks=false requires ai_provider")
+        self.provider = provider
+        self.provider_fallbacks = provider_fallbacks
         self.web_search = web_search
         if web_search == "auto":
             self.web_search = {
@@ -155,6 +168,11 @@ class AIHelper:
                 if effort:
                     payload["reasoning"] = {"effort": effort}
             else:
+                if self.provider is not None:
+                    payload["provider"] = {
+                        "order": [self.provider],
+                        "allow_fallbacks": self.provider_fallbacks,
+                    }
                 payload["messages"] = [
                     {"role": "system", "content": instructions},
                     {"role": "user", "content": content},
@@ -227,6 +245,8 @@ def load_ai_helper_from_config(bot, config_path="config/config.json", logger=Non
             "structured_output": config.get("ai_structured_output", "json_schema"),
             "reasoning_effort": config.get("ai_reasoning_effort") or None,
             "search_model": config.get("ai_search_model") or None,
+            "provider": config.get("ai_provider") or None,
+            "provider_fallbacks": config.get("ai_provider_fallbacks", True),
             "debug_mode": config.get("ai_debug", False),
         }
         if not options["api_key"] or not options["model"]:

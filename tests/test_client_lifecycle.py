@@ -68,6 +68,38 @@ def test_search_routes_and_separate_model(base_url, endpoint):
         assert payload["plugins"] == [{"id": "web"}]
 
 
+@pytest.mark.parametrize("fallbacks", [True, False])
+@pytest.mark.parametrize("search", [True, False])
+def test_openrouter_provider_preference_applies_to_regular_and_search_requests(
+    fallbacks, search,
+):
+    ai = helper(provider="anthropic", provider_fallbacks=fallbacks)
+    ai._post = AsyncMock(return_value=({"choices": [{"message": {"content": "answer"}}]}, None))
+
+    assert asyncio.run(ai.generate_content("question", enable_web_search=search)) == ("answer", None)
+    route, payload = ai._post.call_args.args
+    assert route == "chat/completions"
+    assert payload["provider"] == {"order": ["anthropic"], "allow_fallbacks": fallbacks}
+    assert ("plugins" in payload) is search
+
+
+def test_openrouter_default_request_has_no_provider_override():
+    ai = helper()
+    ai._post = AsyncMock(return_value=({"choices": [{"message": {"content": "answer"}}]}, None))
+    asyncio.run(ai.generate_content("question"))
+    assert "provider" not in ai._post.call_args.args[1]
+
+
+@pytest.mark.parametrize("options", [
+    {"provider": "anthropic", "base_url": "https://api.openai.com/v1"},
+    {"provider": "anthropic", "provider_fallbacks": "false"},
+    {"provider_fallbacks": False},
+])
+def test_invalid_provider_configuration_is_rejected(options):
+    with pytest.raises(ValueError):
+        helper(**options)
+
+
 def test_image_is_encoded_and_strict_schema_preserved(tmp_path):
     path = tmp_path / "image.png"
     Image.new("RGB", (2, 2)).save(path)
@@ -169,6 +201,18 @@ def test_ai_helper_is_cached_per_configuration_and_closed(tmp_path):
     first.close.assert_awaited_once()
     second.close.assert_awaited_once()
     assert not bot._ai_helper_cache
+
+
+def test_provider_configuration_is_loaded_and_changes_cache_key():
+    bot = SimpleNamespace(config={"ai_api_key": "key", "ai_model": "model"})
+    default = load_ai_helper_from_config(bot)
+    bot.config["ai_provider"] = "anthropic"
+    preferred = load_ai_helper_from_config(bot)
+    bot.config["ai_provider_fallbacks"] = False
+    pinned = load_ai_helper_from_config(bot)
+    assert default is not preferred is not pinned
+    assert preferred.provider == "anthropic" and preferred.provider_fallbacks is True
+    assert pinned.provider == "anthropic" and pinned.provider_fallbacks is False
 
 
 def test_environment_key_and_missing_model(monkeypatch):
