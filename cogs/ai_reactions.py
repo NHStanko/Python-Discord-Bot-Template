@@ -6,6 +6,7 @@ import os
 import random
 
 import discord
+from google.genai import types
 
 from helpers.ai import load_ai_helper_from_config
 from helpers.discord_context import add_message_context, extract_message_content
@@ -100,6 +101,7 @@ async def xqc_explains(
             prompt=prompt,
             image_path=image_path,
             system_prompt=system_prompt,
+            thinking_level="high",
             enable_web_search=True,  # Enable web search for latest information
         )
 
@@ -147,7 +149,7 @@ async def xqc_explains(
 @ai_context_menu(name="Bajs React")
 async def test_ai(interaction: discord.Interaction, message: discord.Message) -> None:
     """
-    Generate a simulated Twitch chat response using the configured AI model.
+    Generate a simulated Twitch chat response based on the message content using Gemini AI.
 
     Parameters:
     - interaction: The interaction that triggered this command.
@@ -234,27 +236,35 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
     )
 
     # Define the response schema
-    response_schema = {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["chats", "explanation", "deleted_count"],
-        "properties": {
-            "explanation": {"type": "string", "description": "Brief explanation, 200 words max"},
-            "chats": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": ["username", "message"],
-                    "properties": {
-                        "username": {"type": "string"},
-                        "message": {"type": "string"},
+    response_schema = types.Schema(
+        type=types.Type.OBJECT,
+        required=["chats", "explanation"],
+        properties={
+            "explanation": types.Schema(
+                type=types.Type.STRING,
+                description="A brief explanation of what was observed in the content and how the AI plans to respond, 200 words max",
+            ),
+            "chats": types.Schema(
+                type=types.Type.ARRAY,
+                items=types.Schema(
+                    type=types.Type.OBJECT,
+                    required=["username", "message"],
+                    properties={
+                        "username": types.Schema(
+                            type=types.Type.STRING,
+                        ),
+                        "message": types.Schema(
+                            type=types.Type.STRING,
+                        ),
                     },
-                },
-            },
-            "deleted_count": {"type": "integer"},
+                ),
+            ),
+            "deleted_count": types.Schema(
+                type=types.Type.INTEGER,
+                description="Number of chat entries replaced by the exact moderation placeholder",
+            ),
         },
-    }
+    )
 
     # Generate the AI response
     try:
@@ -274,6 +284,7 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
             response_mime_type="application/json",
             response_schema=response_schema,
             available_emotes=available_emotes,
+            thinking_level="high",
         )
 
         if error or not response:

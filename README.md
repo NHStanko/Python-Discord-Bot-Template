@@ -81,83 +81,30 @@ bot process directly and can restart it when needed. It no longer performs a
 scheduled daily restart; configure restart policy and log rotation in the
 supervisor instead.
 
-## AI provider configuration
+## Gemini AI configuration
 
-AI commands use an OpenAI-compatible API. Set these keys in `config/config.json`
-and restart the bot:
+AI commands use the Gemini API. Set these keys in `config/config.json` and
+restart the bot:
 
 ```json
 {
-  "ai_api_key": "YOUR_PROVIDER_KEY",
-  "ai_base_url": "https://openrouter.ai/api/v1",
-  "ai_model": "YOUR_OPENROUTER_MODEL_ID",
-  "ai_provider": "",
-  "ai_provider_fallbacks": true,
-  "ai_search_model": "",
-  "ai_web_search": "auto",
-  "ai_structured_output": "json_schema",
-  "ai_reasoning_effort": "",
-  "ai_debug": false
+  "gemini_api_key": "YOUR_GOOGLE_AI_STUDIO_API_KEY",
+  "gemini_model": "gemini-2.5-pro",
+  "gemini_debug": false
 }
 ```
 
-Use an OpenRouter model ID including its provider prefix. For direct OpenAI,
-change `ai_base_url` to `https://api.openai.com/v1`, use an OpenAI API key,
-and set `ai_model` to an OpenAI model ID available to your account. Other
-OpenAI-compatible base URLs also work for Chat Completions. Supply the base URL,
-not the full `/chat/completions` path. Only configure endpoints you trust:
-they receive the API key and message/image content.
+Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+The same model handles image input, structured Bajs replies, and Google Search
+grounding for xQc explanations and Brock game TTS. Use a model available to your
+Google AI Studio project that supports those features. The bot's old default is
+`gemini-1.5-flash-002` when `gemini_model` is empty, so specify a current model.
+Remove the old `ai_api_key`, `ai_base_url`, `ai_model`, `ai_search_model`,
+`ai_web_search`, `ai_structured_output`, `ai_reasoning_effort`, `ai_debug`,
+`ai_provider`, and `ai_provider_fallbacks` entries; Gemini ignores them.
 
-For OpenRouter, set `ai_provider` to an upstream provider slug such as
-`"anthropic"` to try that provider first for both regular and web-search
-requests. This is separate from the provider prefix in `ai_model`, which names
-the model. With `ai_provider_fallbacks: true` (the default), OpenRouter can try
-other providers serving the same model if the preferred one is unavailable.
-Set it to `false` to restrict routing to the selected provider; requests will
-fail if that provider cannot serve the model. Leave `ai_provider` blank for
-OpenRouter's default routing. These options require the OpenRouter base URL
-and do not change models or enable fallback to a different model. See
-[OpenRouter provider routing](https://openrouter.ai/docs/guides/routing/provider-selection)
-for available provider slugs and routing behavior.
-
-Alternatively, leave `ai_api_key` blank and set the `AI_API_KEY` environment
-variable. Old provider-specific keys are no longer used; replace them with
-these settings. No new SDK dependency is needed: requests use the existing
-asynchronous HTTP client.
-
-Feature requirements:
-
-* Image explanations and image-based Bajs reactions require a vision model.
-  Animated images are sent as their first frame. This does not add video or
-  audio understanding.
-* Bajs React defaults to strict JSON schema output. Choose a model supporting
-  structured outputs, or set `ai_structured_output` to `json_object` (JSON mode)
-  or `prompt` (no API format constraint). These fallbacks are less reliable;
-  malformed output can fail the command.
-* xQc explanations and Brock game TTS request web search. `ai_web_search: "auto"`
-  uses OpenRouter's web plugin or OpenAI's Responses API with the web search tool,
-  based on the endpoint hostname. OpenAI needs a model supporting Responses and
-  web search. `ai_search_model` optionally selects a separate model for these
-  requests; blank reuses `ai_model`. For compatible proxy endpoints explicitly
-  select `openrouter` or `openai`. Set `off` to knowingly use model knowledge
-  without live research. Unknown endpoints otherwise return a search configuration
-  error rather than silently omitting research.
-* Reasoning is optional: leave `ai_reasoning_effort` blank for broad compatibility,
-  or set a value supported by your model (such as `high`). The setting applies
-  to both regular and search models; internal reasoning is not displayed.
-* Provider moderation, model access, context limits, rate limits, and billing
-  still apply. Search can incur additional charges. Refusals and unsupported
-  feature errors are reported without retrying with reduced capabilities.
-* Chatterbox Nano voice training and ordinary speech remain local and independent
-  of the AI provider. Only the game-aware generated script uses this API.
-
-`ai_debug` logs request metadata only, not private prompts, images, responses,
-or API keys. The bot does not modify existing configuration or credentials.
-
-See [OpenAI vision](https://developers.openai.com/api/docs/guides/images-vision),
-[OpenAI web search](https://developers.openai.com/api/docs/guides/tools-web-search),
-and [OpenRouter web search](https://openrouter.ai/docs/guides/features/plugins/web-search)
-for provider capability details.
+`gemini_debug: true` saves request details and copies input images into `debug/`.
+Keep it off unless you need those files for troubleshooting.
 
 ## Prompt resources
 
