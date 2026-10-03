@@ -13,6 +13,7 @@ LOYALTY_BADGE_DIR = EMOTES_DIR / "22484632" / "loyalty"
 __all__ = [
     "DELETED_CHAT_PLACEHOLDER",
     "apply_subscriber_badges",
+    "format_deleted_messages",
     "load_emote_map",
     "load_loyalty_badges",
     "sanitize_bajs_chat_data",
@@ -139,13 +140,17 @@ def load_emote_map() -> dict[str, str]:
 DELETED_CHAT_PLACEHOLDER = "message deleted by moderator"
 
 
-def sanitize_bajs_chat_data(chat_data: object) -> dict:
-    """Keep model-generated chat data safe to render and send.
+def format_deleted_messages(chats: list[dict]) -> str:
+    """List the text shown for each moderated chat entry."""
+    return "\n".join(
+        f"- {chat['username']}: {chat.get('deleted_original', 'text unavailable')}"
+        for chat in chats
+        if chat["message"] == DELETED_CHAT_PLACEHOLDER
+    )
 
-    The model must never return the original text behind a moderation
-    placeholder. Only the redacted placeholder and a derived count leave this
-    boundary.
-    """
+
+def sanitize_bajs_chat_data(chat_data: object) -> dict:
+    """Normalize model-generated chat and retain text for moderated entries."""
     if not isinstance(chat_data, dict):
         raise ValueError("AI response must be a JSON object")
 
@@ -160,12 +165,20 @@ def sanitize_bajs_chat_data(chat_data: object) -> dict:
             continue
         username = raw_chat.get("username", "Unknown")
         message = raw_chat.get("message", "")
+        deleted_original = raw_chat.get("deleted_original")
         username = username if isinstance(username, str) else str(username)
         message = message if isinstance(message, str) else str(message)
         if DELETED_CHAT_PLACEHOLDER in message.casefold():
             message = DELETED_CHAT_PLACEHOLDER
             deleted_count += 1
-        chats.append({"username": username[:20], "message": message})
+            if isinstance(deleted_original, str):
+                deleted_original = " ".join(deleted_original.split())[:200]
+        else:
+            deleted_original = None
+        chat = {"username": username[:20], "message": message}
+        if deleted_original:
+            chat["deleted_original"] = deleted_original
+        chats.append(chat)
 
     explanation = chat_data.get("explanation", "")
     explanation = explanation if isinstance(explanation, str) else str(explanation)

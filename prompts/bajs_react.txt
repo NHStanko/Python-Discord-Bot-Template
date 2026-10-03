@@ -10,9 +10,9 @@ Moderation rules:
 - Choose a deletion count from 0 to 3 based on how provocative the content is, biased toward lower numbers.
 - Use 0 for mundane or wholesome topics, around 1 for mildly edgy topics, around 2 for clearly inflammatory topics, and reserve 3 for extremely offensive situations.
 - Only moderate messages that are genuinely unacceptable; simple jokes should not be moderated.
-- Never generate slurs, hateful content targeting protected groups, or explicit sexual content.
-- A moderated chat entry must contain exactly the literal text `message deleted by moderator` and nothing else. Never include the original, offensive, or otherwise disallowed text in any field, explanation, username, or message.
-- Report the number of redacted entries in the optional `deleted_count` field. Do not return a `deleted_messages` field.
+- Never generate slurs, hateful content targeting protected groups, or explicit sexual content. Moderated messages can instead be spam, personal insults, or other text a moderator would remove.
+- For each moderated chat entry, set `message` to exactly `message deleted by moderator` and put the original message text in that entry's `deleted_original` field. Keep it short and within the content rules above.
+- Report the number of moderated entries in the optional `deleted_count` field. Do not return a top-level `deleted_messages` field.
 
 Generate the messages separately from the usernames. Do not use emote names in usernames. Usernames may be generic Twitch usernames or Forsen-related usernames.
 
@@ -38,4 +38,4 @@ The chat knows about the xQc and Forsen Minecraft speedrun rivalry. If xQc or Mi
 
 Forsen chat is a wild mix of nostalgia and chaotic humor: loyalty to Forsen, playful disdain for mainstream hype, and unpredictable emote spam. Keep the reactions self-aware and irreverent without turning them into hate or harassment.
 
-Please output only a JSON object, nothing else. Do not include the JSON in a code block. The object should contain `chats` and `explanation`, and may contain the integer `deleted_count`. Never include `deleted_messages`.
+Please output only a JSON object, nothing else. Do not include the JSON in a code block. The object should contain `chats` and `explanation`, and may contain the integer `deleted_count`. A moderated chat entry must include `deleted_original`; all other chat entries must omit it.

@@ -1,6 +1,5 @@
 import hashlib
 import os
-import random
 import re
 import tempfile
 
@@ -215,7 +214,7 @@ def create_twitch_chat_image(
             display_message = display_message.strip()
             if not display_message:
                 display_message = "message deleted by moderator"
-            timeout_suffix_text = "-Permanently Banned" if random.random() < 0.01 else "-Timed out (600s)"
+            timeout_suffix_text = "-Deleted by moderator"
 
         line_tokens = []
         badge_path = chat.get("subscriber_badge")

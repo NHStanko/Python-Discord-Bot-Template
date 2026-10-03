@@ -14,6 +14,7 @@ from helpers.image_gen import create_twitch_chat_image
 from helpers.prompts import load_prompt, load_prompt_json, render_prompt
 from helpers.twitch_chat import (
     apply_subscriber_badges,
+    format_deleted_messages,
     load_emote_map,
     load_loyalty_badges,
     sanitize_bajs_chat_data,
@@ -256,6 +257,10 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
                         "message": types.Schema(
                             type=types.Type.STRING,
                         ),
+                        "deleted_original": types.Schema(
+                            type=types.Type.STRING,
+                            description="Original text of a message deleted by a moderator; only for moderated chat entries",
+                        ),
                     },
                 ),
             ),
@@ -370,10 +375,12 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
                     "Failed to generate the Twitch chat image.", ephemeral=True
                 )
 
+            deletion_summary = format_deleted_messages(chats)
             await interaction.followup.send(
                 "Twitch chat simulation generated successfully!\n"
                 f"Description: {chat_data['explanation']}\n"
-                f"Messages deleted by moderator: {chat_data['deleted_count']}",
+                f"Messages deleted by moderator: {chat_data['deleted_count']}"
+                + (f"\n{deletion_summary}" if deletion_summary else ""),
                 ephemeral=True,
             )
 
