@@ -171,8 +171,9 @@ def test_sound_editor_buttons_acknowledge_interactions(monkeypatch) -> None:
                 ),
             )
             monkeypatch.setattr(
-                "cogs.voice.asyncio.to_thread",
-                AsyncMock(side_effect=lambda *args, **kwargs: events.append("copy")),
+                view,
+                "_reset_sound",
+                AsyncMock(side_effect=lambda: events.append("copy")),
             )
             await button.callback(interaction)
 
@@ -227,7 +228,8 @@ def test_sound_editor_reports_volume_and_reset_failures(monkeypatch) -> None:
             )
             if label == "Reset":
                 monkeypatch.setattr(
-                    "cogs.voice.asyncio.to_thread",
+                    view,
+                    "_reset_sound",
                     AsyncMock(side_effect=RuntimeError("copy failed")),
                 )
             await buttons[label].callback(interaction)
@@ -235,5 +237,144 @@ def test_sound_editor_reports_volume_and_reset_failures(monkeypatch) -> None:
             response.defer.assert_awaited_once()
             followup.send.assert_awaited_once()
             interaction.edit_original_response.assert_not_awaited()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("second_operation", ["volume", "reset", "other_sound"])
+def test_sound_edits_serialize_across_views(monkeypatch, tmp_path, second_operation):
+    async def scenario():
+        sound_dir = tmp_path / "sounds"
+        sound_dir.mkdir()
+        original_dir = sound_dir / "original"
+        original_dir.mkdir()
+        for name in ("airhorn", "bell"):
+            (sound_dir / f"{name}.mp3").write_text("100")
+            (original_dir / f"{name}.mp3").write_text("100")
+        monkeypatch.setattr("cogs.voice.SOUNDS_DIR", sound_dir)
+        monkeypatch.setattr("cogs.voice.SOUNDS_TEMP_DIR", sound_dir / "temp")
+        monkeypatch.setattr("cogs.voice.SOUNDS_ORIGINAL_DIR", original_dir)
+        monkeypatch.setattr(
+            "cogs.voice.get_sound_with_extension",
+            lambda **kwargs: {"airhorn": "airhorn.mp3", "bell": "bell.mp3"},
+        )
+        monkeypatch.setattr(
+            "cogs.voice.get_sound", lambda **kwargs: ["airhorn", "bell"]
+        )
+        first = SoundModifyView("airhorn", 1)
+        second = SoundModifyView(
+            "bell" if second_operation == "other_sound" else "airhorn", 2
+        )
+        started = asyncio.Event()
+        release = asyncio.Event()
+        second_started = asyncio.Event()
+        calls = []
+
+        async def convert(arguments):
+            source = Path(arguments[2])
+            value = float(source.read_text())
+            calls.append(source.name)
+            if len(calls) == 1:
+                started.set()
+                await release.wait()
+            else:
+                second_started.set()
+            Path(arguments[-1]).write_text(
+                str(value * float(arguments[4].split("=")[1]))
+            )
+
+        monkeypatch.setattr("cogs.voice.run_ffmpeg", convert)
+        first_task = asyncio.create_task(first._apply_volume(1.2))
+        await started.wait()
+        second_task = asyncio.create_task(
+            second._reset_sound()
+            if second_operation == "reset"
+            else second._apply_volume(0.8)
+        )
+        await asyncio.sleep(0)
+        if second_operation == "other_sound":
+            await second_started.wait()
+        else:
+            assert not second_task.done()
+            assert calls == ["airhorn.mp3"]
+        assert (sound_dir / "airhorn.mp3").read_text() == "100"
+        release.set()
+        await asyncio.gather(first_task, second_task)
+        expected = {"volume": 96, "reset": 100, "other_sound": 120}[second_operation]
+        assert float((sound_dir / "airhorn.mp3").read_text()) == pytest.approx(expected)
+        if second_operation == "other_sound":
+            assert float((sound_dir / "bell.mp3").read_text()) == 80
+        assert list((sound_dir / "temp").iterdir()) == []
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_sound_edit_releases_lock_after_failed_conversion(
+    monkeypatch, tmp_path, cancel
+):
+    async def scenario():
+        from cogs.voice import sound_edit_lock
+
+        source = tmp_path / "sound.mp3"
+        source.write_text("original")
+        monkeypatch.setattr("cogs.voice.SOUNDS_DIR", tmp_path)
+        monkeypatch.setattr("cogs.voice.SOUNDS_TEMP_DIR", tmp_path / "temp")
+        view = SimpleNamespace(sound_ext="sound.mp3")
+        started = asyncio.Event()
+
+        async def fail(arguments):
+            started.set()
+            if cancel:
+                await asyncio.Future()
+            raise RuntimeError("conversion failed")
+
+        monkeypatch.setattr("cogs.voice.run_ffmpeg", fail)
+        lock = sound_edit_lock(source)
+        task = asyncio.create_task(SoundModifyView._apply_volume(view, 1.2))
+        await started.wait()
+        if cancel:
+            task.cancel()
+        with pytest.raises(asyncio.CancelledError if cancel else RuntimeError):
+            await task
+        assert not lock.locked()
+        assert source.read_text() == "original"
+        assert list((tmp_path / "temp").iterdir()) == []
+
+    asyncio.run(scenario())
+
+
+def test_cancelled_reset_finishes_copy_before_unlocking(monkeypatch, tmp_path):
+    async def scenario():
+        from cogs.voice import sound_edit_lock
+
+        source = tmp_path / "sound.mp3"
+        source.write_text("modified")
+        monkeypatch.setattr("cogs.voice.SOUNDS_DIR", tmp_path)
+        monkeypatch.setattr("cogs.voice.SOUNDS_TEMP_DIR", tmp_path / "temp")
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def worker(function, original, destination):
+            started.set()
+            await release.wait()
+            destination.write_text("original")
+
+        monkeypatch.setattr("cogs.voice.asyncio.to_thread", worker)
+        view = SimpleNamespace(sound_ext="sound.mp3")
+        lock = sound_edit_lock(source)
+        task = asyncio.create_task(SoundModifyView._reset_sound(view))
+        await started.wait()
+        task.cancel()
+        await asyncio.sleep(0)
+        assert lock.locked()
+        assert not task.done()
+        assert source.read_text() == "modified"
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert not lock.locked()
+        assert source.read_text() == "modified"
+        assert list((tmp_path / "temp").iterdir()) == []
 
     asyncio.run(scenario())
