@@ -41,7 +41,9 @@ class VoiceStore:
         if cleanup:
             for interrupted_delete in self.voices_dir.glob(".*.deleting"):
                 shutil.rmtree(interrupted_delete, ignore_errors=True)
-            for interrupted_sample_delete in self.voices_dir.glob("*/samples/.*.deleting"):
+            for interrupted_sample_delete in self.voices_dir.glob(
+                "*/samples/.*.deleting"
+            ):
                 interrupted_sample_delete.unlink(missing_ok=True)
 
         self.generated_dir = self.data_dir / "generated"
@@ -61,8 +63,7 @@ class VoiceStore:
 
     def _initialize(self) -> None:
         with self._connect() as db:
-            db.executescript(
-                """
+            db.executescript("""
                 CREATE TABLE IF NOT EXISTS voices (
                     slug TEXT PRIMARY KEY,
                     display_name TEXT NOT NULL,
@@ -81,8 +82,7 @@ class VoiceStore:
                     sha256 TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
-                """
-            )
+                """)
             columns = {
                 row[1] for row in db.execute("PRAGMA table_info(voices)").fetchall()
             }
@@ -147,11 +147,9 @@ class VoiceStore:
 
     def list_voices(self) -> list[VoiceProfile]:
         with self._connect() as db:
-            rows = db.execute(
-                """SELECT v.*, COUNT(s.id) AS sample_count
+            rows = db.execute("""SELECT v.*, COUNT(s.id) AS sample_count
                    FROM voices v LEFT JOIN samples s ON s.voice_slug = v.slug
-                   GROUP BY v.slug ORDER BY v.slug"""
-            ).fetchall()
+                   GROUP BY v.slug ORDER BY v.slug""").fetchall()
         return [self._profile(row) for row in rows]
 
     def add_sample(self, name: str, original_filename: str, content: bytes) -> Path:
@@ -198,29 +196,40 @@ class VoiceStore:
 
     def remove_sample(self, name: str, sample_id: str) -> VoiceSample:
         voice = self.get_voice(name)
-        with self._connect() as db:
-            row = db.execute(
-                """SELECT id, voice_slug, filename, original_filename, created_at
-                   FROM samples WHERE voice_slug = ? AND id = ?""",
-                (voice.slug, sample_id),
-            ).fetchone()
-        if row is None:
-            raise KeyError(f"Unknown sample for {voice.slug}: {sample_id}")
-        if voice.sample_count <= 1:
-            raise ValueError("A voice must retain at least one sample; delete the voice instead")
-
-        path = self.voices_dir / voice.slug / row["filename"]
-        tombstone = path.with_name(f".{path.name}.deleting")
-        path.rename(tombstone)
+        file_moved = False
         try:
             with self._connect() as db:
+                # Serialize removals before rechecking the minimum sample count.
+                db.execute("BEGIN IMMEDIATE")
+                row = db.execute(
+                    """SELECT id, voice_slug, filename, original_filename, created_at
+                       FROM samples WHERE voice_slug = ? AND id = ?""",
+                    (voice.slug, sample_id),
+                ).fetchone()
+                if row is None:
+                    raise KeyError(f"Unknown sample for {voice.slug}: {sample_id}")
+
+                sample_count = db.execute(
+                    "SELECT COUNT(*) FROM samples WHERE voice_slug = ?",
+                    (voice.slug,),
+                ).fetchone()[0]
+                if sample_count <= 1:
+                    raise ValueError(
+                        "A voice must retain at least one sample; delete the voice instead"
+                    )
+
+                path = self.voices_dir / voice.slug / row["filename"]
+                tombstone = path.with_name(f".{path.name}.deleting")
+                path.rename(tombstone)
+                file_moved = True
                 db.execute("DELETE FROM samples WHERE id = ?", (sample_id,))
                 db.execute(
                     "UPDATE voices SET needs_retrain = 1, updated_at = ? WHERE slug = ?",
                     (datetime.now(timezone.utc).isoformat(), voice.slug),
                 )
         except Exception:
-            tombstone.rename(path)
+            if file_moved:
+                tombstone.rename(path)
             raise
         tombstone.unlink()
         return VoiceSample(
