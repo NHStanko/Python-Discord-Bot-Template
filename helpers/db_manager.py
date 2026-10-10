@@ -81,6 +81,8 @@ async def add_warn(user_id: int, server_id: int, moderator_id: int, reason: str)
     :param reason: The reason why the user should be warned.
     """
     async with aiosqlite.connect(DATABASE_PATH) as db:
+        # Reserve the write transaction before choosing the next warning ID.
+        await db.execute("BEGIN IMMEDIATE")
         rows = await db.execute(
             "SELECT id FROM warns WHERE user_id=? AND server_id=? ORDER BY id DESC LIMIT 1",
             (
@@ -172,6 +174,8 @@ async def add_play(user_id: int, song: str) -> int:
     """
 
     async with aiosqlite.connect(DATABASE_PATH) as db:
+        # Serialize lookup and increment because user/song pairs are not unique.
+        await db.execute("BEGIN IMMEDIATE")
         # Check if the song has already been played by the user
         rows = await db.execute(
             "SELECT times_played FROM plays WHERE user_id=? AND song_id=?",
