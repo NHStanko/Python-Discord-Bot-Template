@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Iterator
 
 VOICE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
+VOICE_DELETE_TOMBSTONE = re.compile(
+    r"^\.([a-z0-9][a-z0-9_-]{1,31})\.[0-9a-f]{32}\.deleting$"
+)
 VOICE_STATE_FILENAME = "chatterbox-nano-v1.pt"
 
 
@@ -41,9 +44,10 @@ class VoiceStore:
         self.data_dir = data_dir.resolve()
         self.voices_dir = self.data_dir / "voices"
         self.voices_dir.mkdir(parents=True, exist_ok=True)
+        self.database_path = self.data_dir / "voices.sqlite3"
+        self._initialize()
+        self._recover_voice_deletes()
         if cleanup:
-            for interrupted_delete in self.voices_dir.glob(".*.deleting"):
-                shutil.rmtree(interrupted_delete, ignore_errors=True)
             for interrupted_sample_delete in self.voices_dir.glob(
                 "*/samples/.*.deleting"
             ):
@@ -55,8 +59,28 @@ class VoiceStore:
             for stale_output in self.generated_dir.glob("*.wav"):
                 stale_output.unlink(missing_ok=True)
 
-        self.database_path = self.data_dir / "voices.sqlite3"
-        self._initialize()
+    def _recover_voice_deletes(self) -> None:
+        """Restore interrupted deletes whose database transaction rolled back."""
+        for tombstone in self.voices_dir.glob(".*.deleting"):
+            match = VOICE_DELETE_TOMBSTONE.fullmatch(tombstone.name)
+            if match is None:
+                continue
+
+            slug = match.group(1)
+            voice_dir = self.voices_dir / slug
+            with self._connect() as db:
+                # Serialize recovery with deletes before deciding which side of
+                # the filesystem/database operation was committed.
+                db.execute("BEGIN IMMEDIATE")
+                exists = db.execute(
+                    "SELECT 1 FROM voices WHERE slug = ?", (slug,)
+                ).fetchone()
+                if not tombstone.exists():
+                    continue
+                if exists is None:
+                    shutil.rmtree(tombstone, ignore_errors=True)
+                elif not voice_dir.exists():
+                    tombstone.rename(voice_dir)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -292,12 +316,33 @@ class VoiceStore:
         voice = self.get_voice(name)
         voice_dir = self.voices_dir / voice.slug
         tombstone = self.voices_dir / f".{voice.slug}.{uuid.uuid4().hex}.deleting"
-        voice_dir.rename(tombstone)
-        try:
-            with self._connect() as db:
+        file_moved = False
+        with self._connect() as db:
+            # Keep startup recovery from observing the rename before the
+            # matching database deletion has committed or rolled back.
+            db.execute("BEGIN IMMEDIATE")
+            exists = db.execute(
+                "SELECT 1 FROM voices WHERE slug = ?", (voice.slug,)
+            ).fetchone()
+            if exists is None:
+                raise KeyError(f"Unknown voice: {voice.slug}")
+            try:
+                voice_dir.rename(tombstone)
+                file_moved = True
                 db.execute("DELETE FROM voices WHERE slug = ?", (voice.slug,))
-        except Exception:
-            tombstone.rename(voice_dir)
-            raise
-        shutil.rmtree(tombstone)
+                db.commit()
+            except Exception:
+                # Restore while BEGIN IMMEDIATE still excludes recovery or
+                # another delete for this voice.
+                if file_moved and tombstone.exists() and not voice_dir.exists():
+                    tombstone.rename(voice_dir)
+                file_moved = False
+                db.rollback()
+                raise
+        try:
+            shutil.rmtree(tombstone)
+        except FileNotFoundError:
+            # A concurrent startup recovery may remove this committed
+            # tombstone after the transaction releases its lock.
+            pass
         return voice
