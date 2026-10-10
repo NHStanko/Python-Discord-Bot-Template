@@ -170,14 +170,14 @@ async def add_play(user_id: int, song: str) -> int:
         );
 
     """
-    
+
     async with aiosqlite.connect(DATABASE_PATH) as db:
         # Check if the song has already been played by the user
         rows = await db.execute(
             "SELECT times_played FROM plays WHERE user_id=? AND song_id=?",
             (user_id, song),
         )
-        
+
         # Fetch the result
         result = await rows.fetchone()
         if result is not None:
@@ -197,15 +197,14 @@ async def add_play(user_id: int, song: str) -> int:
             await db.commit()
             return 1
 
+
 async def get_plays(user_id: int, song: str) -> int:
     # check if user id is 0, if so, return the total number of times the song has been played
     if user_id == 0:
         async with aiosqlite.connect(DATABASE_PATH) as db:
             rows = await db.execute(
                 "SELECT SUM(times_played) FROM plays WHERE song_id=?",
-                (
-                    song,
-                ),
+                (song,),
             )
             async with rows as cursor:
                 result = await cursor.fetchone()
@@ -226,9 +225,10 @@ async def get_plays(user_id: int, song: str) -> int:
                 if result is None or result[0] is None:
                     return 0
                 return result[0]
-            
+
+
 # List the top 10 songs played by all or a specific user
-async def get_leaderboard(user_id: int ) -> list:
+async def get_leaderboard(user_id: int) -> list:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         if user_id == 0:
             # Combine plays for all users
@@ -239,9 +239,7 @@ async def get_leaderboard(user_id: int ) -> list:
             # Combine plays for a specific user, only return song_id and times_played
             rows = await db.execute(
                 "SELECT song_id, times_played FROM plays WHERE user_id=? ORDER BY times_played DESC LIMIT 12",
-                (
-                    user_id,
-                ),
+                (user_id,),
             )
             print(rows)
         async with rows as cursor:
@@ -251,50 +249,65 @@ async def get_leaderboard(user_id: int ) -> list:
                 result_list.append(row)
             return result_list
 
+
 async def user_exists(user_id: int) -> bool:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         rows = await db.execute(
             "SELECT * FROM money WHERE user_id=?",
-            (
-                user_id,
-            ),
+            (user_id,),
         )
         async with rows as cursor:
             result = await cursor.fetchone()
             return result is not None
 
+
 async def create_user(user_id: int) -> None:
     async with aiosqlite.connect(DATABASE_PATH) as db:
+        # Serialize initialization because existing databases have no unique user ID.
+        await db.execute("BEGIN IMMEDIATE")
         await db.execute(
-            "INSERT INTO money (user_id, money) VALUES (?, ?)",
-            (
-                user_id,
-                10000,
-            ),
+            "INSERT INTO money (user_id, money) "
+            "SELECT ?, 10000 WHERE NOT EXISTS "
+            "(SELECT 1 FROM money WHERE user_id=?)",
+            (user_id, user_id),
         )
         await db.commit()
-        
+
+
 async def check_user(user_id: int) -> None:
-    if not await user_exists(user_id):
-        await create_user(user_id)
+    await create_user(user_id)
+
 
 async def get_user_info(user_id: int) -> dict:
     await check_user(user_id)
     async with aiosqlite.connect(DATABASE_PATH) as db:
         rows = await db.execute(
             "SELECT * FROM money WHERE user_id=?",
-            (
-                user_id,
-            ),
+            (user_id,),
         )
         async with rows as cursor:
             result = await cursor.fetchone()
             if result is not None:
-                return {"user_id": result[0], "money": result[1], "total_loss": result[2], "total_gain": result[3], "bankrupt_count": result[4], "plays": result[5]}
+                return {
+                    "user_id": result[0],
+                    "money": result[1],
+                    "total_loss": result[2],
+                    "total_gain": result[3],
+                    "bankrupt_count": result[4],
+                    "plays": result[5],
+                }
             else:
                 return None
 
-async def update_user_info(user_id: int, money: int, total_loss: int, total_gain: int, bankrupt_count: int, plays: int) -> None:
+
+async def update_user_info(
+    user_id: int,
+    money: int,
+    total_loss: int,
+    total_gain: int,
+    bankrupt_count: int,
+    plays: int,
+) -> None:
     await check_user(user_id)
     async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.execute(
@@ -310,6 +323,7 @@ async def update_user_info(user_id: int, money: int, total_loss: int, total_gain
         )
         await db.commit()
 
+
 async def update_user_money(user_id: int, money: int) -> None:
     await check_user(user_id)
     async with aiosqlite.connect(DATABASE_PATH) as db:
@@ -321,8 +335,17 @@ async def update_user_money(user_id: int, money: int) -> None:
             ),
         )
         await db.commit()
-        
+
+
 async def play_result(user_id: int, net: int) -> None:
     await check_user(user_id)
-    current = await get_user_info(user_id)
-    await update_user_info(user_id, current["money"] + net, current["total_loss"] + (net if net < 0 else 0), current["total_gain"] + (net if net > 0 else 0), current["bankrupt_count"] + (1 if net <= 0 else 0), current["plays"] + 1)
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            "UPDATE money SET money=money+?, "
+            "total_loss=total_loss+?, total_gain=total_gain+?, "
+            "bankrupt_count=bankrupt_count+"
+            "CASE WHEN money>0 AND money+?<=0 THEN 1 ELSE 0 END, "
+            "plays=plays+1 WHERE user_id=?",
+            (net, min(net, 0), max(net, 0), net, user_id),
+        )
+        await db.commit()
