@@ -128,3 +128,112 @@ def test_sound_editor_rejects_other_users() -> None:
 
     assert not allowed
     response.send_message.assert_awaited_once()
+
+
+def test_sound_editor_buttons_acknowledge_interactions(monkeypatch) -> None:
+    async def scenario() -> None:
+        monkeypatch.setattr(
+            "cogs.voice.get_sound_with_extension",
+            lambda **kwargs: {"airhorn": "airhorn.mp3"},
+        )
+        monkeypatch.setattr("cogs.voice.get_sound", lambda **kwargs: ["airhorn"])
+        monkeypatch.setattr("cogs.voice.shutil.copy", Mock())
+        view = SoundModifyView("airhorn", authorized_user_id=1)
+        volume_calls = []
+        for button in view.children:
+            events = []
+
+            async def apply_volume(factor):
+                events.append("convert")
+                volume_calls.append(factor)
+
+            monkeypatch.setattr(view, "_apply_volume", apply_volume)
+            message = SimpleNamespace(delete=AsyncMock())
+            response = SimpleNamespace(
+                defer=AsyncMock(side_effect=lambda **kwargs: events.append("defer")),
+                edit_message=AsyncMock(
+                    side_effect=lambda **kwargs: events.append("edit_message")
+                ),
+            )
+            followup = SimpleNamespace(
+                send=AsyncMock(
+                    side_effect=lambda *args, **kwargs: (
+                        events.append("followup"),
+                        message,
+                    )[1]
+                )
+            )
+            interaction = SimpleNamespace(
+                response=response,
+                followup=followup,
+                edit_original_response=AsyncMock(
+                    side_effect=lambda **kwargs: events.append("edit_original")
+                ),
+            )
+            monkeypatch.setattr(
+                "cogs.voice.asyncio.to_thread",
+                AsyncMock(side_effect=lambda *args, **kwargs: events.append("copy")),
+            )
+            await button.callback(interaction)
+
+            if button.label.startswith("Vol"):
+                assert events == ["defer", "convert", "followup"]
+                response.defer.assert_awaited_once_with(ephemeral=True, thinking=True)
+                message.delete.assert_awaited_once_with(delay=5)
+            elif button.label == "Reset":
+                assert events == ["defer", "copy", "edit_original"]
+                response.defer.assert_awaited_once_with(ephemeral=True)
+            else:
+                assert events == ["edit_message"]
+                response.edit_message.assert_awaited_once()
+
+        assert volume_calls == [0.8, 1.2]
+
+    asyncio.run(scenario())
+
+
+def test_sound_editor_reports_volume_and_reset_failures(monkeypatch) -> None:
+    async def scenario() -> None:
+        monkeypatch.setattr(
+            "cogs.voice.get_sound_with_extension",
+            lambda **kwargs: {"airhorn": "airhorn.mp3"},
+        )
+        monkeypatch.setattr("cogs.voice.get_sound", lambda **kwargs: ["airhorn"])
+        monkeypatch.setattr("cogs.voice.shutil.copy", Mock())
+        view = SoundModifyView("airhorn", authorized_user_id=1)
+
+        async def fail_volume(factor):
+            raise RuntimeError("conversion failed")
+
+        monkeypatch.setattr(view, "_apply_volume", fail_volume)
+        buttons = {button.label: button for button in view.children}
+        for label in ("Vol Up", "Vol Down", "Reset"):
+            events = []
+            response = SimpleNamespace(
+                defer=AsyncMock(side_effect=lambda **kwargs: events.append("defer")),
+                edit_message=AsyncMock(),
+            )
+            followup = SimpleNamespace(
+                send=AsyncMock(
+                    side_effect=lambda *args, **kwargs: events.append("error")
+                )
+            )
+            interaction = SimpleNamespace(
+                response=response,
+                followup=followup,
+                edit_original_response=AsyncMock(
+                    side_effect=lambda **kwargs: events.append("edit_original")
+                ),
+            )
+            if label == "Reset":
+                monkeypatch.setattr(
+                    "cogs.voice.asyncio.to_thread",
+                    AsyncMock(side_effect=RuntimeError("copy failed")),
+                )
+            await buttons[label].callback(interaction)
+            assert events == ["defer", "error"]
+            response.defer.assert_awaited_once()
+            followup.send.assert_awaited_once()
+            interaction.edit_original_response.assert_not_awaited()
+
+    asyncio.run(scenario())
