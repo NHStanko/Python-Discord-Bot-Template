@@ -46,6 +46,13 @@ class Owner(commands.Cog, name="owner"):
             await context.send(embed=embed)
             return
         elif scope == "guild":
+            if context.guild is None:
+                embed = discord.Embed(
+                    description="The `guild` scope can only be used in a server.",
+                    color=0xE02B2B,
+                )
+                await context.send(embed=embed)
+                return
             context.bot.tree.copy_global_to(guild=context.guild)
             await context.bot.tree.sync(guild=context.guild)
             embed = discord.Embed(
@@ -85,6 +92,13 @@ class Owner(commands.Cog, name="owner"):
             await context.send(embed=embed)
             return
         elif scope == "guild":
+            if context.guild is None:
+                embed = discord.Embed(
+                    description="The `guild` scope can only be used in a server.",
+                    color=0xE02B2B,
+                )
+                await context.send(embed=embed)
+                return
             context.bot.tree.clear_commands(guild=context.guild)
             await context.bot.tree.sync(guild=context.guild)
             embed = discord.Embed(
@@ -190,7 +204,6 @@ class Owner(commands.Cog, name="owner"):
         embed = discord.Embed(description="Shutting down. Bye! :wave:", color=0x9C84EF)
         await context.send(embed=embed)
         await self.bot.close()
-        
 
     @commands.hybrid_command(
         name="say",
@@ -240,7 +253,7 @@ class Owner(commands.Cog, name="owner"):
             color=0x9C84EF,
         )
         await context.send(embed=embed)
-        
+
         try:
             repo_dir = Path(__file__).resolve().parents[1]
             scraper = repo_dir / "emote_scraper.py"
@@ -258,11 +271,11 @@ class Owner(commands.Cog, name="owner"):
             stderr = stderr_bytes.decode(errors="replace")
 
             # Log the output instead of sending it
-            logger = logging.getLogger('discord')
+            logger = logging.getLogger("discord")
             logger.info("Emote sync stdout: %s", stdout)
             if stderr:
                 logger.error("Emote sync stderr: %s", stderr)
-            
+
             if process.returncode == 0:
                 embed = discord.Embed(
                     description="Emote synchronization completed successfully!",
@@ -273,9 +286,9 @@ class Owner(commands.Cog, name="owner"):
                     description=f"Emote synchronization failed with return code {process.returncode}",
                     color=0xE02B2B,
                 )
-            
+
             await context.send(embed=embed)
-            
+
         except Exception as e:
             embed = discord.Embed(
                 description=f"An error occurred during emote synchronization: {e}",
