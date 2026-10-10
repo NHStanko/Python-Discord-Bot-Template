@@ -397,45 +397,47 @@ async def update_user_money(user_id: int, money: int) -> None:
         await db.commit()
 
 
-class InsufficientFunds(ValueError):
-    pass
+async def play_result(user_id: int, net: int) -> None:
+    await check_user(user_id)
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            "UPDATE money SET money=money+?, "
+            "total_loss=total_loss+?, total_gain=total_gain+?, "
+            "bankrupt_count=bankrupt_count+"
+            "CASE WHEN money>0 AND money+?<=0 THEN 1 ELSE 0 END, "
+            "plays=plays+1 WHERE user_id=?",
+            (net, min(net, 0), max(net, 0), net, user_id),
+        )
+        await db.commit()
 
 
-async def settle_wager(user_id: int, amount: int | None, won: bool) -> dict:
-    """Validate and settle one wager in a transaction; None wagers the balance."""
-    if amount is not None and amount < 1:
-        raise ValueError("You can't gamble less than 1 coin")
+async def settle_wager(user_id: int, amount: int, won: bool) -> dict | None:
+    """Persist a funded wager and its statistics, or return None if unfunded."""
+    if amount < 1:
+        raise ValueError("The wager must be at least one coin")
     async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.execute("BEGIN IMMEDIATE")
         await db.execute(
-            "INSERT INTO money(user_id) VALUES (?) ON CONFLICT(user_id) DO NOTHING",
-            (user_id,),
+            "INSERT INTO money (user_id, money) "
+            "SELECT ?, 10000 WHERE NOT EXISTS "
+            "(SELECT 1 FROM money WHERE user_id=?)",
+            (user_id, user_id),
         )
         async with db.execute(
             "SELECT money FROM money WHERE user_id=?", (user_id,)
         ) as cursor:
             balance = (await cursor.fetchone())[0]
-        wager = balance if amount is None else amount
-        if wager < 1:
-            raise ValueError("You can't gamble less than 1 coin")
-        if wager > balance:
-            raise InsufficientFunds("You don't have enough coins to gamble that much")
-        net = wager if won else -wager
+        if amount > balance:
+            await db.rollback()
+            return None
+        net = amount if won else -amount
         await db.execute(
-            "UPDATE money SET money=money+?, total_loss=total_loss+?, "
-            "total_gain=total_gain+?, bankrupt_count=bankrupt_count+?, plays=plays+1 WHERE user_id=?",
-            (
-                net,
-                min(net, 0),
-                max(net, 0),
-                int(balance > 0 and balance + net == 0),
-                user_id,
-            ),
+            "UPDATE money SET money=money+?, "
+            "total_loss=total_loss+?, total_gain=total_gain+?, "
+            "bankrupt_count=bankrupt_count+"
+            "CASE WHEN money>0 AND money+?<=0 THEN 1 ELSE 0 END, "
+            "plays=plays+1 WHERE user_id=?",
+            (net, min(net, 0), max(net, 0), net, user_id),
         )
         await db.commit()
-        return {
-            "amount": wager,
-            "net": net,
-            "all_in": wager == balance,
-            "money": balance + net,
-        }
+        return {"all_in": amount == balance}

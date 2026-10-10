@@ -9,6 +9,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import List
 from urllib.parse import urlparse
+from weakref import WeakValueDictionary
 
 import discord
 from discord import FFmpegPCMAudio, app_commands
@@ -19,6 +20,36 @@ from yt_dlp import YoutubeDL
 from helpers import checks, db_manager
 
 logger = logging.getLogger("discord_bot")
+
+SOUND_EDIT_LOCKS: WeakValueDictionary[Path, asyncio.Lock] = WeakValueDictionary()
+
+
+def sound_edit_lock(source: Path) -> asyncio.Lock:
+    """Share a lock across editors of the same file."""
+    key = source.resolve()
+    lock = SOUND_EDIT_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        SOUND_EDIT_LOCKS[key] = lock
+    return lock
+
+
+async def copy_sound(source: Path, destination: Path) -> None:
+    """Finish a worker copy before cancellation permits temporary file cleanup."""
+    task = asyncio.create_task(asyncio.to_thread(shutil.copyfile, source, destination))
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+    if cancelled:
+        # Retrieve a possible worker error before propagating cancellation.
+        if not task.cancelled():
+            task.exception()
+        raise asyncio.CancelledError
+    task.result()
+
 
 SOUNDS_DIR = Path("./sounds")
 SOUNDS_TEMP_DIR = SOUNDS_DIR / "temp"
@@ -88,6 +119,14 @@ async def run_ffmpeg(arguments: list[str], timeout: float = 120) -> None:
         process.kill()
         await process.communicate()
         raise RuntimeError("FFmpeg timed out") from exc
+    except asyncio.CancelledError:
+        if process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+        await process.communicate()
+        raise
     if process.returncode:
         detail = stderr.decode(errors="replace").strip().splitlines()
         raise RuntimeError(
@@ -644,9 +683,9 @@ class Voice(commands.Cog, name="voice"):
             return
         view = SoundModifyView(sound, context.author.id)
         await context.send(f"Modifying `{sound}`", view=view)
-        
-    
-        
+
+
+
 class SoundModifyView(discord.ui.View):
     def __init__(self, sound: str, authorized_user_id: int):
         super().__init__()
@@ -655,7 +694,7 @@ class SoundModifyView(discord.ui.View):
         self.sound_ext = get_sound_with_extension()[self.sound]
         # Set the title of the view
         self.title = f"Modifying {self.sound}"
-        
+
         # Check if the sound exists in the original folder
         originals = get_sound(dir="./sounds/original")
         if self.sound not in originals:
@@ -675,42 +714,73 @@ class SoundModifyView(discord.ui.View):
 
     async def _apply_volume(self, factor: float) -> None:
         source = SOUNDS_DIR / self.sound_ext
-        SOUNDS_TEMP_DIR.mkdir(parents=True, exist_ok=True)
-        handle = tempfile.NamedTemporaryFile(
-            suffix=source.suffix, dir=SOUNDS_TEMP_DIR, delete=False
-        )
-        destination = Path(handle.name)
-        handle.close()
-        try:
-            await run_ffmpeg(
-                [
-                    "-y",
-                    "-i",
-                    str(source),
-                    "-af",
-                    f"volume={factor}",
-                    str(destination),
-                ]
+        async with sound_edit_lock(source):
+            SOUNDS_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+            handle = tempfile.NamedTemporaryFile(
+                suffix=source.suffix, dir=SOUNDS_TEMP_DIR, delete=False
             )
-            await asyncio.to_thread(shutil.copyfile, destination, source)
-        finally:
-            destination.unlink(missing_ok=True)
-        
-    
+            destination = Path(handle.name)
+            handle.close()
+            try:
+                await run_ffmpeg(
+                    [
+                        "-y",
+                        "-i",
+                        str(source),
+                        "-af",
+                        f"volume={factor}",
+                        str(destination),
+                    ]
+                )
+                destination.replace(source)
+            finally:
+                destination.unlink(missing_ok=True)
+
+    async def _reset_sound(self) -> None:
+        source = SOUNDS_DIR / self.sound_ext
+        async with sound_edit_lock(source):
+            SOUNDS_TEMP_DIR.mkdir(parents=True, exist_ok=True)
+            handle = tempfile.NamedTemporaryFile(
+                suffix=source.suffix, dir=SOUNDS_TEMP_DIR, delete=False
+            )
+            destination = Path(handle.name)
+            handle.close()
+            try:
+                await copy_sound(SOUNDS_ORIGINAL_DIR / self.sound_ext, destination)
+                destination.replace(source)
+            finally:
+                destination.unlink(missing_ok=True)
 
     # Callback for the "Vol Down" button
     @discord.ui.button(label="Vol Down", style=discord.ButtonStyle.gray)
     async def vol_down(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Modify and save to a temp file
-        await self._apply_volume(0.8)
-        await interaction.response.send_message(f"`{self.sound}` decreased 20%", ephemeral=True, delete_after=5)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            await self._apply_volume(0.8)
+        except Exception as exc:
+            await interaction.followup.send(
+                f"Could not decrease `{self.sound}`: {exc}", ephemeral=True
+            )
+            return
+        message = await interaction.followup.send(
+            f"`{self.sound}` decreased 20%", ephemeral=True, wait=True
+        )
+        await message.delete(delay=5)
 
     @discord.ui.button(label="Vol Up", style=discord.ButtonStyle.gray)
     async def vol_up(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Send a response with the button label
-        # Modify and save to a temp file
-        await self._apply_volume(1.2)
-        await interaction.response.send_message(f"`{self.sound}` increased 20%", ephemeral=True, delete_after=5)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            await self._apply_volume(1.2)
+        except Exception as exc:
+            await interaction.followup.send(
+                f"Could not increase `{self.sound}`: {exc}", ephemeral=True
+            )
+            return
+        message = await interaction.followup.send(
+            f"`{self.sound}` increased 20%", ephemeral=True, wait=True
+        )
+        await message.delete(delay=5)
         
     # @discord.ui.button(label="Play", style=discord.ButtonStyle.blurple)
     # async def play(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -742,19 +812,23 @@ class SoundModifyView(discord.ui.View):
         
     @discord.ui.button(label="Reset", style=discord.ButtonStyle.red)
     async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Send a response with the button label
-        # copy from sounds/original to sounds
-        sounds = get_sound_with_extension(dir="./sounds")
-        await asyncio.to_thread(
-            shutil.copyfile,
-            SOUNDS_ORIGINAL_DIR / sounds[self.sound],
-            SOUNDS_DIR / sounds[self.sound],
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await self._reset_sound()
+        except Exception as exc:
+            await interaction.followup.send(
+                f"Could not reset `{self.sound}`: {exc}", ephemeral=True
+            )
+            return
+        await interaction.edit_original_response(
+            view=None, content=f"`{self.sound}` has been reset."
         )
-        await interaction.message.edit(view=None, content=f'`{self.sound}` has been reset.')
-        
+
     @discord.ui.button(label="Confirm", style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.message.edit(view=None, content=f'`{self.sound}` has been modified.')
+        await interaction.response.edit_message(
+            view=None, content=f"`{self.sound}` has been modified."
+        )
 
 # And then we finally add the cog to the bot so that it can load, unload,
 # reload and use it's content.

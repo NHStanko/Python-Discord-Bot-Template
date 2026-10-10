@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import random
+from contextlib import closing
 
 import discord
 from google.genai import types
@@ -185,94 +186,95 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
         temp_files,
     ) = await extract_message_content(message, interaction, logger, interaction.client)
 
-    # Prepare the prompt
-    prompt = content_text
-    if title:
-        prompt = f"Title: {title}\n{prompt}"
-    if description:
-        prompt = f"{prompt}\nDescription: {description}"
-    if url:
-        prompt = f"{prompt}\nURL: {url}"
-
-    # Add placeholder text if the prompt is empty to prevent API errors
-    if image_path and ((url and not title and not description) or not prompt.strip()):
-        prompt = "Please respond to this image."
-
-    prompt, image_path = await add_message_context(
-        message, prompt, image_path, temp_files, interaction.client, logger
-    )
-
-    logger.info("Final prompt prepared (%s characters)", len(prompt))
-
-    emote_dict = load_prompt_json("bajs_emote_weights.json")
-    if not isinstance(emote_dict, dict):
-        raise ValueError("Bajs emote weights must be a JSON object")
-
-    optional_rules = []
-    if random.random() < 0.25:
-        optional_rules.append(
-            "You have an xQc fan, also known as a juicer, in the chat."
-        )
-    if random.random() < 0.50:
-        optional_rules.append(
-            "Some user will just spam ?????? when they do not know what is going on."
-        )
-    if random.random() < 0.25:
-        optional_rules.append(
-            "You can have a user who is a stan for a specific streamer; they only use that streamer's emotes."
-        )
-    if random.random() < 0.25:
-        optional_rules.append(
-            "You should have one user with the username flickerfireheart; they are a baj and juicer and should not say offensive things."
-        )
-    optional_rules_text = (
-        "\n".join(optional_rules) or "No extra chatter constraints apply."
-    )
-    system_prompt = render_prompt(
-        "bajs_react.txt",
-        OPTIONAL_RULES=optional_rules_text,
-        EMOTE_WEIGHTS_JSON=json.dumps(
-            emote_dict, ensure_ascii=False, sort_keys=True, indent=2
-        ),
-    )
-
-    # Define the response schema
-    response_schema = types.Schema(
-        type=types.Type.OBJECT,
-        required=["chats", "explanation"],
-        properties={
-            "explanation": types.Schema(
-                type=types.Type.STRING,
-                description="A brief explanation of what was observed in the content and how the AI plans to respond, 200 words max",
-            ),
-            "chats": types.Schema(
-                type=types.Type.ARRAY,
-                items=types.Schema(
-                    type=types.Type.OBJECT,
-                    required=["username", "message"],
-                    properties={
-                        "username": types.Schema(
-                            type=types.Type.STRING,
-                        ),
-                        "message": types.Schema(
-                            type=types.Type.STRING,
-                        ),
-                        "deleted_original": types.Schema(
-                            type=types.Type.STRING,
-                            description="Original text of a message deleted by a moderator; only for moderated chat entries",
-                        ),
-                    },
-                ),
-            ),
-            "deleted_count": types.Schema(
-                type=types.Type.INTEGER,
-                description="Number of chat entries replaced by the exact moderation placeholder",
-            ),
-        },
-    )
-
-    # Generate the AI response
     try:
+        # Prepare the prompt
+        prompt = content_text
+        if title:
+            prompt = f"Title: {title}\n{prompt}"
+        if description:
+            prompt = f"{prompt}\nDescription: {description}"
+        if url:
+            prompt = f"{prompt}\nURL: {url}"
+
+        # Add placeholder text if the prompt is empty to prevent API errors
+        if image_path and (
+            (url and not title and not description) or not prompt.strip()
+        ):
+            prompt = "Please respond to this image."
+
+        prompt, image_path = await add_message_context(
+            message, prompt, image_path, temp_files, interaction.client, logger
+        )
+
+        logger.info("Final prompt prepared (%s characters)", len(prompt))
+
+        emote_dict = load_prompt_json("bajs_emote_weights.json")
+        if not isinstance(emote_dict, dict):
+            raise ValueError("Bajs emote weights must be a JSON object")
+
+        optional_rules = []
+        if random.random() < 0.25:
+            optional_rules.append(
+                "You have an xQc fan, also known as a juicer, in the chat."
+            )
+        if random.random() < 0.50:
+            optional_rules.append(
+                "Some user will just spam ?????? when they do not know what is going on."
+            )
+        if random.random() < 0.25:
+            optional_rules.append(
+                "You can have a user who is a stan for a specific streamer; they only use that streamer's emotes."
+            )
+        if random.random() < 0.25:
+            optional_rules.append(
+                "You should have one user with the username flickerfireheart; they are a baj and juicer and should not say offensive things."
+            )
+        optional_rules_text = (
+            "\n".join(optional_rules) or "No extra chatter constraints apply."
+        )
+        system_prompt = render_prompt(
+            "bajs_react.txt",
+            OPTIONAL_RULES=optional_rules_text,
+            EMOTE_WEIGHTS_JSON=json.dumps(
+                emote_dict, ensure_ascii=False, sort_keys=True, indent=2
+            ),
+        )
+
+        # Define the response schema
+        response_schema = types.Schema(
+            type=types.Type.OBJECT,
+            required=["chats", "explanation"],
+            properties={
+                "explanation": types.Schema(
+                    type=types.Type.STRING,
+                    description="A brief explanation of what was observed in the content and how the AI plans to respond, 200 words max",
+                ),
+                "chats": types.Schema(
+                    type=types.Type.ARRAY,
+                    items=types.Schema(
+                        type=types.Type.OBJECT,
+                        required=["username", "message"],
+                        properties={
+                            "username": types.Schema(
+                                type=types.Type.STRING,
+                            ),
+                            "message": types.Schema(
+                                type=types.Type.STRING,
+                            ),
+                            "deleted_original": types.Schema(
+                                type=types.Type.STRING,
+                                description="Original text of a message deleted by a moderator; only for moderated chat entries",
+                            ),
+                        },
+                    ),
+                ),
+                "deleted_count": types.Schema(
+                    type=types.Type.INTEGER,
+                    description="Number of chat entries replaced by the exact moderation placeholder",
+                ),
+            },
+        )
+
         logger.info("Loading emotes from emotes.json")
         emote_map = await asyncio.to_thread(load_emote_map)
         logger.info(f"Loaded {len(emote_map)} emotes")
@@ -360,15 +362,9 @@ async def test_ai(interaction: discord.Interaction, message: discord.Message) ->
             )
 
             if result_image_path:
-                # Send the image as a reply
-                await message.reply(file=discord.File(result_image_path))
-
-                # Clean up the generated result image
-                try:
-                    logger.info(f"Cleaning up result image file: {result_image_path}")
-                    await asyncio.to_thread(os.remove, result_image_path)
-                except Exception as e:
-                    logger.error(f"Error cleaning up result image file: {e}")
+                temp_files.append(result_image_path)
+                with closing(discord.File(result_image_path)) as result_file:
+                    await message.reply(file=result_file)
             else:
                 logger.error("Failed to generate Twitch chat image")
                 await interaction.followup.send(

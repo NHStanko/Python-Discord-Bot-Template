@@ -62,16 +62,6 @@ def validate_image(content: bytes, max_pixels: int) -> str:
             return suffix
 
 
-def save_image(content: bytes, suffix: str) -> str:
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as file:
-        try:
-            file.write(content)
-            return file.name
-        except BaseException:
-            os.unlink(file.name)
-            raise
-
-
 class AIHelper:
     def __init__(
         self,
@@ -163,6 +153,33 @@ class AIHelper:
         except Exception as e:
             self.logger.error(f"Error saving debug information: {e}")
 
+    @staticmethod
+    def _write_image(content: bytes, suffix: str = ".png") -> str:
+        fd, temp_path = tempfile.mkstemp(suffix=suffix)
+        os.close(fd)
+        try:
+            Path(temp_path).write_bytes(content)
+        except BaseException:
+            Path(temp_path).unlink(missing_ok=True)
+            raise
+        return temp_path
+
+    async def _save_image(self, content: bytes, suffix: str = ".png") -> str:
+        task = asyncio.create_task(
+            asyncio.to_thread(self._write_image, content, suffix)
+        )
+        cancelled = False
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                cancelled = True
+        path = task.result()
+        if cancelled:
+            Path(path).unlink(missing_ok=True)
+            raise asyncio.CancelledError
+        return path
+
     @bounded_ai_request(busy_result=None)
     async def download_image(self, url: str) -> Optional[str]:
         """Download an image from a URL and save it to a temporary file"""
@@ -210,16 +227,7 @@ class AIHelper:
                 suffix = await asyncio.to_thread(
                     validate_image, bytes(content), self.max_image_pixels
                 )
-                # A cancelled write must finish so its temporary file can be removed.
-                write_task = asyncio.create_task(
-                    asyncio.to_thread(save_image, content, suffix)
-                )
-                try:
-                    temp_path = await asyncio.shield(write_task)
-                except asyncio.CancelledError:
-                    temp_path = await write_task
-                    await asyncio.to_thread(Path(temp_path).unlink, missing_ok=True)
-                    raise
+                temp_path = await self._save_image(content, suffix)
 
                 self.logger.info(f"Image downloaded and saved to: {temp_path}")
                 return temp_path

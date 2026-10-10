@@ -44,7 +44,7 @@ def test_concurrent_wagers_cannot_overspend(database):
             *(db.settle_wager(1, 100, False) for _ in range(10)), return_exceptions=True
         )
         assert sum(isinstance(result, dict) for result in results) == 1
-        assert sum(isinstance(result, db.InsufficientFunds) for result in results) == 9
+        assert sum(result is None for result in results) == 9
         info = await db.get_user_info(1)
         assert info["money"] == 0
         assert info["plays"] == 1
@@ -69,12 +69,12 @@ def test_bankruptcy_requires_balance_to_reach_zero(database):
         await db.update_user_money(1, 100)
         await db.settle_wager(1, 10, False)
         assert (await db.get_user_info(1))["bankrupt_count"] == 0
-        result = await db.settle_wager(1, None, False)
-        assert result == {"amount": 90, "net": -90, "all_in": True, "money": 0}
+        result = await db.settle_wager(1, 90, False)
+        assert result == {"all_in": True}
         info = await db.get_user_info(1)
         assert info["bankrupt_count"] == 1
         assert info["total_loss"] == -100
-        for amount in (0, -1, None):
+        for amount in (0, -1):
             with pytest.raises(ValueError):
                 await db.settle_wager(1, amount, True)
         assert await db.get_user_info(1) == info

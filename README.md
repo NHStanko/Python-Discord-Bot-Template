@@ -221,6 +221,7 @@ those records before restarting. Historical lost updates and incorrect bankruptc
 counts cannot be reconstructed automatically.
 
 Wagers now validate available funds and update balances and statistics in one
-transaction. All-in wagers use the balance inside that transaction. A bankruptcy
+transaction. All-in wagers retain the selected stake and recheck available funds inside the
+transaction. A bankruptcy
 is counted only when a positive balance reaches zero, and the bot announces a
 result only after the transaction commits.

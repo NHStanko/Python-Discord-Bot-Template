@@ -15,20 +15,26 @@ class Gamba(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    async def gamble_money(self, ctx, amount: int | None):
-        try:
-            result = await settle_wager(
-                ctx.author.id, amount, random.choice((True, False))
-            )
-        except ValueError as exc:
-            await ctx.send(str(exc), delete_after=5)
+    async def gamble_money(self, ctx, amount: int, hide: bool = True):
+        if amount < 1:
+            await ctx.send("You can't gamble less than 1 coin")
             return
-        outcome = "won" if result["net"] > 0 else "lost"
-        prefix = "went all in and " if result["all_in"] else ""
-        await ctx.send(
-            f"{ctx.author.mention} {prefix}{outcome} {result['amount']} coins",
-            delete_after=None if result["all_in"] else 5,
-        )
+        won = random.choice([-1, 1]) > 0
+        settlement = await settle_wager(ctx.author.id, amount, won)
+        if settlement is None:
+            await ctx.send(
+                "You don't have enough coins to gamble that much", delete_after=5
+            )
+            return
+        outcome = "won" if won else "lost"
+        if settlement["all_in"]:
+            await ctx.send(
+                f"{ctx.author.mention} went all in and {outcome} {amount} coins"
+            )
+        else:
+            await ctx.send(
+                f"{ctx.author.mention} {outcome} {amount} coins", delete_after=5
+            )
 
     @commands.hybrid_command(brief="Gamba your money", name="gamba")
     @checks.gambling_enabled()
@@ -38,7 +44,8 @@ class Gamba(commands.Cog):
     @commands.hybrid_command(brief="Gamba all your money", name="allin")
     @checks.gambling_enabled()
     async def allin(self, ctx):
-        await self.gamble_money(ctx, None)
+        money = await get_user_info(ctx.author.id)
+        await self.gamble_money(ctx, money["money"])
 
     @commands.hybrid_group(name="casino", brief="Casino commands")
     async def casino(self, ctx):

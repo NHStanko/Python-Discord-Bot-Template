@@ -75,9 +75,13 @@ class ChatterboxTTSService:
             raise RuntimeError("TTS service is closed")
         if self._worker is None or self._worker.returncode is not None:
             self._worker = await asyncio.create_subprocess_exec(
-                sys.executable, "-m", "helpers.tts_worker",
-                "--data-dir", str(self.store.data_dir),
-                "--cpu-threads", str(self.cpu_threads),
+                sys.executable,
+                "-m",
+                "helpers.tts_worker",
+                "--data-dir",
+                str(self.store.data_dir),
+                "--cpu-threads",
+                str(self.cpu_threads),
                 cwd=Path(__file__).resolve().parent.parent,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
@@ -87,11 +91,15 @@ class ChatterboxTTSService:
             raise RuntimeError("TTS service is closed")
         worker = self._worker
         try:
-            worker.stdin.write((json.dumps({"operation": operation, "args": args}) + "\n").encode())
+            worker.stdin.write(
+                (json.dumps({"operation": operation, "args": args}) + "\n").encode()
+            )
             await worker.stdin.drain()
             line = await worker.stdout.readline()
             if not line:
-                raise RuntimeError("TTS worker stopped unexpectedly; check the bot logs and retry")
+                raise RuntimeError(
+                    "TTS worker stopped unexpectedly; check the bot logs and retry"
+                )
             result = json.loads(line)
         except BaseException:
             await self._stop_worker()
@@ -205,7 +213,15 @@ class ChatterboxTTSService:
             filters + [f"{inputs}concat=n={len(samples)}:v=0:a=1[out]"]
         )
         command.extend(
-            ["-filter_complex", filter_graph, "-map", "[out]", "-t", "15", str(destination)]
+            [
+                "-filter_complex",
+                filter_graph,
+                "-map",
+                "[out]",
+                "-t",
+                "15",
+                str(destination),
+            ]
         )
         result = subprocess.run(command, capture_output=True, text=True, timeout=120)
         if result.returncode:
@@ -254,8 +270,11 @@ class ChatterboxTTSService:
         while len(words) > max_words:
             # Prefer a clause boundary over restarting speech mid-phrase.
             boundary = next(
-                (index for index in range(max_words, max_words // 2, -1)
-                 if words[index - 1].endswith((",", ";", ":"))),
+                (
+                    index
+                    for index in range(max_words, max_words // 2, -1)
+                    if words[index - 1].endswith((",", ";", ":"))
+                ),
                 max_words,
             )
             chunks.append(" ".join(words[:boundary]))
@@ -269,7 +288,9 @@ class ChatterboxTTSService:
         cls, text: str, max_words: int = TTS_CHUNK_WORDS
     ) -> list[tuple[str, float]]:
         """Create short generation units with an explicit pause after each one."""
-        paragraphs = [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
+        paragraphs = [
+            part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()
+        ]
         chunks: list[tuple[str, float]] = []
         for paragraph_index, paragraph in enumerate(paragraphs):
             normalized = " ".join(paragraph.split())
@@ -372,7 +393,7 @@ class ChatterboxTTSService:
             raise
 
     @staticmethod
-    def _combine_sequence_sync(
+    async def _combine_sequence(
         parts: list[tuple[Path | None, float]], destination: Path
     ) -> None:
         if not parts:
@@ -408,27 +429,34 @@ class ChatterboxTTSService:
         command.extend(
             ["-filter_complex", filter_graph, "-map", "[out]", str(destination)]
         )
-        result = subprocess.run(command, capture_output=True, text=True, timeout=180)
-        if result.returncode:
-            detail = (
-                result.stderr.strip().splitlines()[-1]
-                if result.stderr.strip()
-                else "unknown error"
-            )
+        process = await asyncio.create_subprocess_exec(
+            *command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE
+        )
+        try:
+            _, stderr = await asyncio.wait_for(process.communicate(), timeout=180)
+        except BaseException:
+            if process.returncode is None:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+            await process.communicate()
+            raise
+        if process.returncode:
+            errors = stderr.decode(errors="replace").strip().splitlines()
+            detail = errors[-1] if errors else "unknown error"
             raise ValueError(f"FFmpeg could not combine the sequence: {detail}")
 
-    async def combine_sequence(
-        self, parts: list[tuple[Path | None, float]]
-    ) -> Path:
+    async def combine_sequence(self, parts: list[tuple[Path | None, float]]) -> Path:
         handle = tempfile.NamedTemporaryFile(
             suffix=".wav", dir=self.store.generated_dir, delete=False
         )
         output = Path(handle.name)
         handle.close()
         try:
-            await asyncio.to_thread(self._combine_sequence_sync, parts, output)
+            await self._combine_sequence(parts, output)
             return output
-        except Exception:
+        except BaseException:
             output.unlink(missing_ok=True)
             raise
 

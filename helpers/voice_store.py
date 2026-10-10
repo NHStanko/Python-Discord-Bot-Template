@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 import shutil
 import sqlite3
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 
 VOICE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
+VOICE_DELETE_TOMBSTONE = re.compile(
+    r"^\.([a-z0-9][a-z0-9_-]{1,31})\.[0-9a-f]{32}\.deleting$"
+)
 VOICE_STATE_FILENAME = "chatterbox-nano-v1.pt"
 
 
@@ -38,10 +44,13 @@ class VoiceStore:
         self.data_dir = data_dir.resolve()
         self.voices_dir = self.data_dir / "voices"
         self.voices_dir.mkdir(parents=True, exist_ok=True)
+        self.database_path = self.data_dir / "voices.sqlite3"
+        self._initialize()
+        self._recover_voice_deletes()
         if cleanup:
-            for interrupted_delete in self.voices_dir.glob(".*.deleting"):
-                shutil.rmtree(interrupted_delete, ignore_errors=True)
-            for interrupted_sample_delete in self.voices_dir.glob("*/samples/.*.deleting"):
+            for interrupted_sample_delete in self.voices_dir.glob(
+                "*/samples/.*.deleting"
+            ):
                 interrupted_sample_delete.unlink(missing_ok=True)
 
         self.generated_dir = self.data_dir / "generated"
@@ -50,19 +59,43 @@ class VoiceStore:
             for stale_output in self.generated_dir.glob("*.wav"):
                 stale_output.unlink(missing_ok=True)
 
-        self.database_path = self.data_dir / "voices.sqlite3"
-        self._initialize()
+    def _recover_voice_deletes(self) -> None:
+        """Restore interrupted deletes whose database transaction rolled back."""
+        for tombstone in self.voices_dir.glob(".*.deleting"):
+            match = VOICE_DELETE_TOMBSTONE.fullmatch(tombstone.name)
+            if match is None:
+                continue
 
-    def _connect(self) -> sqlite3.Connection:
+            slug = match.group(1)
+            voice_dir = self.voices_dir / slug
+            with self._connect() as db:
+                # Serialize recovery with deletes before deciding which side of
+                # the filesystem/database operation was committed.
+                db.execute("BEGIN IMMEDIATE")
+                exists = db.execute(
+                    "SELECT 1 FROM voices WHERE slug = ?", (slug,)
+                ).fetchone()
+                if not tombstone.exists():
+                    continue
+                if exists is None:
+                    shutil.rmtree(tombstone, ignore_errors=True)
+                elif not voice_dir.exists():
+                    tombstone.rename(voice_dir)
+
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.database_path)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        return connection
+        try:
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def _initialize(self) -> None:
         with self._connect() as db:
-            db.executescript(
-                """
+            db.executescript("""
                 CREATE TABLE IF NOT EXISTS voices (
                     slug TEXT PRIMARY KEY,
                     display_name TEXT NOT NULL,
@@ -81,8 +114,7 @@ class VoiceStore:
                     sha256 TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
-                """
-            )
+                """)
             columns = {
                 row[1] for row in db.execute("PRAGMA table_info(voices)").fetchall()
             }
@@ -147,11 +179,9 @@ class VoiceStore:
 
     def list_voices(self) -> list[VoiceProfile]:
         with self._connect() as db:
-            rows = db.execute(
-                """SELECT v.*, COUNT(s.id) AS sample_count
+            rows = db.execute("""SELECT v.*, COUNT(s.id) AS sample_count
                    FROM voices v LEFT JOIN samples s ON s.voice_slug = v.slug
-                   GROUP BY v.slug ORDER BY v.slug"""
-            ).fetchall()
+                   GROUP BY v.slug ORDER BY v.slug""").fetchall()
         return [self._profile(row) for row in rows]
 
     def add_sample(self, name: str, original_filename: str, content: bytes) -> Path:
@@ -198,29 +228,40 @@ class VoiceStore:
 
     def remove_sample(self, name: str, sample_id: str) -> VoiceSample:
         voice = self.get_voice(name)
-        with self._connect() as db:
-            row = db.execute(
-                """SELECT id, voice_slug, filename, original_filename, created_at
-                   FROM samples WHERE voice_slug = ? AND id = ?""",
-                (voice.slug, sample_id),
-            ).fetchone()
-        if row is None:
-            raise KeyError(f"Unknown sample for {voice.slug}: {sample_id}")
-        if voice.sample_count <= 1:
-            raise ValueError("A voice must retain at least one sample; delete the voice instead")
-
-        path = self.voices_dir / voice.slug / row["filename"]
-        tombstone = path.with_name(f".{path.name}.deleting")
-        path.rename(tombstone)
+        file_moved = False
         try:
             with self._connect() as db:
+                # Serialize removals before rechecking the minimum sample count.
+                db.execute("BEGIN IMMEDIATE")
+                row = db.execute(
+                    """SELECT id, voice_slug, filename, original_filename, created_at
+                       FROM samples WHERE voice_slug = ? AND id = ?""",
+                    (voice.slug, sample_id),
+                ).fetchone()
+                if row is None:
+                    raise KeyError(f"Unknown sample for {voice.slug}: {sample_id}")
+
+                sample_count = db.execute(
+                    "SELECT COUNT(*) FROM samples WHERE voice_slug = ?",
+                    (voice.slug,),
+                ).fetchone()[0]
+                if sample_count <= 1:
+                    raise ValueError(
+                        "A voice must retain at least one sample; delete the voice instead"
+                    )
+
+                path = self.voices_dir / voice.slug / row["filename"]
+                tombstone = path.with_name(f".{path.name}.deleting")
+                path.rename(tombstone)
+                file_moved = True
                 db.execute("DELETE FROM samples WHERE id = ?", (sample_id,))
                 db.execute(
                     "UPDATE voices SET needs_retrain = 1, updated_at = ? WHERE slug = ?",
                     (datetime.now(timezone.utc).isoformat(), voice.slug),
                 )
         except Exception:
-            tombstone.rename(path)
+            if file_moved:
+                tombstone.rename(path)
             raise
         tombstone.unlink()
         return VoiceSample(
@@ -262,7 +303,7 @@ class VoiceStore:
 
     def set_volume(self, name: str, volume: float) -> VoiceProfile:
         voice = self.get_voice(name)
-        if volume < 0 or volume > 4:
+        if not math.isfinite(volume) or volume < 0 or volume > 4:
             raise ValueError("Voice volume must be between 0% and 400%")
         with self._connect() as db:
             db.execute(
@@ -275,12 +316,33 @@ class VoiceStore:
         voice = self.get_voice(name)
         voice_dir = self.voices_dir / voice.slug
         tombstone = self.voices_dir / f".{voice.slug}.{uuid.uuid4().hex}.deleting"
-        voice_dir.rename(tombstone)
-        try:
-            with self._connect() as db:
+        file_moved = False
+        with self._connect() as db:
+            # Keep startup recovery from observing the rename before the
+            # matching database deletion has committed or rolled back.
+            db.execute("BEGIN IMMEDIATE")
+            exists = db.execute(
+                "SELECT 1 FROM voices WHERE slug = ?", (voice.slug,)
+            ).fetchone()
+            if exists is None:
+                raise KeyError(f"Unknown voice: {voice.slug}")
+            try:
+                voice_dir.rename(tombstone)
+                file_moved = True
                 db.execute("DELETE FROM voices WHERE slug = ?", (voice.slug,))
-        except Exception:
-            tombstone.rename(voice_dir)
-            raise
-        shutil.rmtree(tombstone)
+                db.commit()
+            except Exception:
+                # Restore while BEGIN IMMEDIATE still excludes recovery or
+                # another delete for this voice.
+                if file_moved and tombstone.exists() and not voice_dir.exists():
+                    tombstone.rename(voice_dir)
+                file_moved = False
+                db.rollback()
+                raise
+        try:
+            shutil.rmtree(tombstone)
+        except FileNotFoundError:
+            # A concurrent startup recovery may remove this committed
+            # tombstone after the transaction releases its lock.
+            pass
         return voice

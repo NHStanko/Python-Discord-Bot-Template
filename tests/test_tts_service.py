@@ -108,13 +108,22 @@ def nano_runtime(monkeypatch):
         return model
 
     monkeypatch.setitem(sys.modules, "chatterbox", SimpleNamespace())
-    monkeypatch.setitem(sys.modules, "chatterbox.tts_turbo", SimpleNamespace(
-        ChatterboxTurboTTS=SimpleNamespace(from_pretrained=load_model),
-        Conditionals=State,
-    ))
-    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(
-        inference_mode=nullcontext, set_num_threads=lambda threads: None,
-    ))
+    monkeypatch.setitem(
+        sys.modules,
+        "chatterbox.tts_turbo",
+        SimpleNamespace(
+            ChatterboxTurboTTS=SimpleNamespace(from_pretrained=load_model),
+            Conditionals=State,
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        SimpleNamespace(
+            inference_mode=nullcontext,
+            set_num_threads=lambda threads: None,
+        ),
+    )
 
     # Exercise the model logic in this process with the fake runtime. Separate
     # worker tests cover the real subprocess transport and cancellation.
@@ -142,7 +151,8 @@ def test_saved_voices_reload_and_switch_without_speaker_leakage(tmp_path, nano_r
         assert rate == 24000 and len(samples) == 2400
         output.unlink()
     assert nano_runtime.calls == [
-        ("first", "Hello there."), ("second", "Hello there."),
+        ("first", "Hello there."),
+        ("second", "Hello there."),
         ("first", "Hello there."),
     ]
 
@@ -157,7 +167,9 @@ def _legacy_voice(store):
     return old_state
 
 
-def test_legacy_voice_rebuilds_once_and_retains_samples(tmp_path, monkeypatch, nano_runtime):
+def test_legacy_voice_rebuilds_once_and_retains_samples(
+    tmp_path, monkeypatch, nano_runtime
+):
     store = VoiceStore(tmp_path)
     old_state = _legacy_voice(store)
     store.set_volume("legacy", 1.4)
@@ -184,8 +196,9 @@ def test_failed_migration_preserves_legacy_profile_and_cleans_output(
     store = VoiceStore(tmp_path)
     old_state = _legacy_voice(store)
     service = ChatterboxTTSService(store)
-    monkeypatch.setattr(service, "_combine_samples", lambda paths, dest:
-                        _silent_wav(dest, 24000, 1, 5))
+    monkeypatch.setattr(
+        service, "_combine_samples", lambda paths, dest: _silent_wav(dest, 24000, 1, 5)
+    )
     with pytest.raises(ValueError, match="more than 5 seconds"):
         asyncio.run(service.synthesize("legacy", "Hello."))
     assert store.state_path("legacy") == old_state
@@ -210,14 +223,16 @@ def test_bad_generation_is_rejected(samples):
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg is not installed")
 def test_reference_processing_preserves_speech_after_internal_pause(tmp_path):
     rate = 24000
-    tone = (0.2 * np.sin(2 * np.pi * 220 * np.arange(rate * 3) / rate)).astype(np.float32)
+    tone = (0.2 * np.sin(2 * np.pi * 220 * np.arange(rate * 3) / rate)).astype(
+        np.float32
+    )
     samples = np.concatenate([tone, np.zeros(rate), tone]).astype(np.float32)
     source, destination = tmp_path / "source.wav", tmp_path / "reference.wav"
     scipy.io.wavfile.write(source, rate, samples)
     ChatterboxTTSService._combine_samples([source], destination)
     output_rate, output = scipy.io.wavfile.read(destination)
     assert len(output) / output_rate > 6.9
-    assert np.max(np.abs(output[5 * output_rate:6 * output_rate])) > 100
+    assert np.max(np.abs(output[5 * output_rate : 6 * output_rate])) > 100
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg is not installed")
@@ -228,11 +243,14 @@ def test_volume_limiter_prevents_clipping_without_truncation(tmp_path, sequence)
     source, output = tmp_path / "source.wav", tmp_path / "output.wav"
     scipy.io.wavfile.write(source, rate, tone)
     if sequence:
-        ChatterboxTTSService._combine_sequence_sync([(source, 4.0)], output)
+        asyncio.run(ChatterboxTTSService._combine_sequence([(source, 4.0)], output))
     else:
         options = ChatterboxTTSService.playback_options(4.0).split()
-        subprocess.run(["ffmpeg", "-y", "-i", str(source), *options, str(output)],
-                       capture_output=True, check=True)
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(source), *options, str(output)],
+            capture_output=True,
+            check=True,
+        )
     output_rate, audio = scipy.io.wavfile.read(output)
     assert len(audio) == len(tone) and output_rate == rate
     assert np.max(np.abs(audio.astype(np.float64))) <= 0.951 * 32768
@@ -263,8 +281,10 @@ def test_combine_sequence_inserts_silence(tmp_path: Path) -> None:
     _silent_wav(first, sample_rate=24_000, channels=1, seconds=0.1)
     _silent_wav(second, sample_rate=24_000, channels=1, seconds=0.1)
 
-    ChatterboxTTSService._combine_sequence_sync(
-        [(first, 1.0), (None, 0.2), (second, 2.0)], output
+    asyncio.run(
+        ChatterboxTTSService._combine_sequence(
+            [(first, 1.0), (None, 0.2), (second, 2.0)], output
+        )
     )
 
     with wave.open(str(output), "rb") as combined:
@@ -289,7 +309,9 @@ def test_youtube_request_validation_rejects_unsafe_inputs(
         ChatterboxTTSService._validate_youtube_request(url, start, duration)
 
 
-def test_youtube_download_uses_requested_time_range(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_youtube_download_uses_requested_time_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured: dict = {}
 
     class FakeYoutubeDL:
@@ -313,9 +335,7 @@ def test_youtube_download_uses_requested_time_range(monkeypatch: pytest.MonkeyPa
         "https://youtu.be/abc123", start=12, duration=8, max_bytes=1024
     )
 
-    requested_ranges = list(
-        captured["download_ranges"]({"duration": 100}, None)
-    )
+    requested_ranges = list(captured["download_ranges"]({"duration": 100}, None))
     assert requested_ranges == [{"start_time": 12, "end_time": 20}]
     assert filename == "youtube-abc123.webm"
     assert content == b"audio"
