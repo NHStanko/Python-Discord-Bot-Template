@@ -1,7 +1,7 @@
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -85,6 +85,38 @@ def test_ffmpeg_runner_never_invokes_a_shell() -> None:
         "input;still-data.wav",
         "output.mp3",
     )
+
+
+@pytest.mark.parametrize("already_exited", [False, True])
+def test_ffmpeg_cancellation_reaps_process_and_propagates(already_exited: bool) -> None:
+    async def scenario() -> None:
+        communicating = asyncio.Event()
+
+        async def communicate():
+            if not communicating.is_set():
+                communicating.set()
+                await asyncio.Future()
+            return b"", b""
+
+        process = SimpleNamespace(
+            communicate=AsyncMock(side_effect=communicate),
+            kill=Mock(),
+            returncode=0 if already_exited else None,
+        )
+        with patch(
+            "cogs.voice.asyncio.create_subprocess_exec",
+            AsyncMock(return_value=process),
+        ):
+            task = asyncio.create_task(run_ffmpeg(["-i", "input.wav", "output.mp3"]))
+            await communicating.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        assert process.communicate.await_count == 2
+        assert process.kill.call_count == (0 if already_exited else 1)
+
+    asyncio.run(scenario())
 
 
 def test_sound_editor_rejects_other_users() -> None:
