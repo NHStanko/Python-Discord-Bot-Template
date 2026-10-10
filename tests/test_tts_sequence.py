@@ -35,6 +35,10 @@ def test_silence_remains_a_pause_alias() -> None:
         "(forsen)",
         "(pause) nope",
         "(pause) 31",
+        "(pause) nan",
+        "(silence) NaNs",
+        "(pause) inf",
+        "(pause) -inf",
     ],
 )
 def test_sequence_rejects_invalid_scripts(script: str) -> None:

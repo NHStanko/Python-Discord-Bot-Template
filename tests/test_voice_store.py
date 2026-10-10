@@ -160,6 +160,17 @@ def test_voice_volume_is_limited_to_safe_ffmpeg_values(tmp_path: Path) -> None:
         store.set_volume("valid", 4.1)
 
 
+@pytest.mark.parametrize("volume", [float("nan"), float("inf"), float("-inf")])
+def test_nonfinite_volume_is_rejected_without_changing_profile(tmp_path, volume):
+    store = VoiceStore(tmp_path)
+    profile = store.create_voice("valid", created_by=1)
+
+    with pytest.raises(ValueError, match="Voice volume"):
+        store.set_volume("valid", volume)
+
+    assert store.get_voice("valid") == profile
+
+
 def test_existing_voice_database_gains_default_volume(tmp_path: Path) -> None:
     with sqlite3.connect(tmp_path / "voices.sqlite3") as database:
         database.execute("""CREATE TABLE voices (
