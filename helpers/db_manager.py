@@ -353,3 +353,35 @@ async def play_result(user_id: int, net: int) -> None:
             (net, min(net, 0), max(net, 0), net, user_id),
         )
         await db.commit()
+
+
+async def settle_wager(user_id: int, amount: int, won: bool) -> dict | None:
+    """Persist a funded wager and its statistics, or return None if unfunded."""
+    if amount < 1:
+        raise ValueError("The wager must be at least one coin")
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        await db.execute(
+            "INSERT INTO money (user_id, money) "
+            "SELECT ?, 10000 WHERE NOT EXISTS "
+            "(SELECT 1 FROM money WHERE user_id=?)",
+            (user_id, user_id),
+        )
+        async with db.execute(
+            "SELECT money FROM money WHERE user_id=?", (user_id,)
+        ) as cursor:
+            balance = (await cursor.fetchone())[0]
+        if amount > balance:
+            await db.rollback()
+            return None
+        net = amount if won else -amount
+        await db.execute(
+            "UPDATE money SET money=money+?, "
+            "total_loss=total_loss+?, total_gain=total_gain+?, "
+            "bankrupt_count=bankrupt_count+"
+            "CASE WHEN money>0 AND money+?<=0 THEN 1 ELSE 0 END, "
+            "plays=plays+1 WHERE user_id=?",
+            (net, min(net, 0), max(net, 0), net, user_id),
+        )
+        await db.commit()
+        return {"all_in": amount == balance}
