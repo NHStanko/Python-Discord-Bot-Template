@@ -4,6 +4,7 @@ Based on the Python Discord Bot Template, Copyright © Krypton 2019-2023.
 """
 
 import argparse
+import asyncio
 import logging
 import os
 import platform
@@ -131,6 +132,10 @@ class ManagedBot(Bot):
 
     async def close(self):
         self.status_task.cancel()
+        self.voice_recovery_task.cancel()
+        recovery = self.voice_recovery_task.get_task()
+        if recovery is not None:
+            await asyncio.gather(recovery, return_exceptions=True)
         try:
             # Unload workers before closing the clients they may still use.
             for extension in list(self.extensions):
@@ -161,6 +166,18 @@ class ManagedBot(Bot):
         self.logger.info("-------------------")
         if not self.status_task.is_running():
             self.status_task.start()
+        if self.voice_enabled and not self.voice_recovery_task.is_running():
+            self.voice_recovery_task.start()
+
+    @tasks.loop(seconds=15.0)
+    async def voice_recovery_task(self) -> None:
+        if not self.voice_enabled or not self.is_ready():
+            return
+        for guild in self.guilds:
+            try:
+                await self.voice_connection_manager.reconcile_guild(guild)
+            except Exception:
+                self.logger.exception("Voice recovery failed for guild %s", guild.id)
 
     async def on_voice_state_update(self, member, before, after) -> None:
         # Abort immediately if voice functionality is disabled.

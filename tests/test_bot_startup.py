@@ -169,3 +169,44 @@ asyncio.run(main())
         text=True,
         timeout=30,
     )
+
+
+def test_voice_recovery_checks_guilds_and_isolates_failures(monkeypatch):
+    async def exercise():
+        bot = create_bot(CONFIG, voice_enabled=True)
+        guilds = [SimpleNamespace(id=1), SimpleNamespace(id=2)]
+        monkeypatch.setattr(type(bot), "guilds", property(lambda self: guilds))
+        monkeypatch.setattr(bot, "is_ready", lambda: True)
+        reconcile = AsyncMock(side_effect=[RuntimeError("failed"), None])
+        bot.voice_connection_manager.reconcile_guild = reconcile
+        await bot.voice_recovery_task()
+        assert reconcile.await_count == 2
+        bot.voice_enabled = False
+        await bot.voice_recovery_task()
+        assert reconcile.await_count == 2
+        await bot.close()
+
+    asyncio.run(exercise())
+
+
+def test_close_waits_for_voice_recovery_cancellation():
+    async def exercise():
+        bot = create_bot(CONFIG, voice_enabled=True)
+        entered = asyncio.Event()
+        cleaned = asyncio.Event()
+
+        async def pending(self):
+            entered.set()
+            try:
+                await asyncio.Future()
+            finally:
+                cleaned.set()
+
+        bot.voice_recovery_task.coro = pending
+        bot.voice_recovery_task.start()
+        await entered.wait()
+        await bot.close()
+        assert cleaned.is_set()
+        assert bot.voice_recovery_task.get_task().done()
+
+    asyncio.run(exercise())

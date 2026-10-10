@@ -60,6 +60,13 @@ After that you can start it with
 python bot.py --voice
 ```
 
+With `--voice`, the bot checks voice connections every 15 seconds while Discord is
+ready. It keeps a healthy connection in an occupied channel, leaves empty channels,
+and reconnects when people are present after a dropped connection or missed event.
+Failed automatic connections retry after 30 seconds, doubling up to five minutes.
+Recovery also runs after startup; if disconnected with several occupied channels,
+it selects the first occupied voice channel in the server’s channel list.
+
 > **Note** You may need to replace `python` with `py`, `python3`, `python3.11`, etc. depending on what Python versions you have installed on the machine.
 
 For development, install the development requirements, then run the quality checks:
