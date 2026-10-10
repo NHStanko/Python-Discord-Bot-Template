@@ -5,9 +5,11 @@ import re
 import shutil
 import sqlite3
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 
 VOICE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 VOICE_STATE_FILENAME = "chatterbox-nano-v1.pt"
@@ -55,11 +57,16 @@ class VoiceStore:
         self.database_path = self.data_dir / "voices.sqlite3"
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.database_path)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        return connection
+        try:
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def _initialize(self) -> None:
         with self._connect() as db:

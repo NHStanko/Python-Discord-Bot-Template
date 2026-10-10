@@ -32,6 +32,36 @@ def test_voice_lifecycle_erases_all_files(tmp_path: Path) -> None:
     assert store.list_voices() == []
 
 
+@pytest.fixture
+def tracked_connections(monkeypatch):
+    connections = []
+    connect = sqlite3.connect
+
+    def tracking_connect(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connections.append(connection)
+        return connection
+
+    monkeypatch.setattr(sqlite3, "connect", tracking_connect)
+    return connections
+
+
+def assert_connections_closed(connections):
+    assert connections
+    for connection in connections:
+        with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+            connection.execute("SELECT 1")
+
+
+def test_store_closes_connection_after_successful_operation(
+    tmp_path: Path, tracked_connections
+) -> None:
+    store = VoiceStore(tmp_path)
+    store.create_voice("test", created_by=123)
+    assert store.get_voice("test").created_by == 123
+    assert_connections_closed(tracked_connections)
+
+
 def test_remove_one_sample_marks_voice_for_retrain(tmp_path: Path) -> None:
     store = VoiceStore(tmp_path)
     voice = store.create_voice("xqc", created_by=123)
@@ -85,7 +115,9 @@ def test_concurrent_sample_removals_retain_one_sample(
     assert store.sample_paths(voice.slug)[0].is_file()
 
 
-def test_failed_sample_delete_restores_file(tmp_path: Path) -> None:
+def test_failed_sample_delete_restores_file(
+    tmp_path: Path, tracked_connections
+) -> None:
     store = VoiceStore(tmp_path)
     voice = store.create_voice("xqc", created_by=123)
     sample_path = store.add_sample(voice.slug, "one.wav", b"one")
@@ -96,9 +128,12 @@ def test_failed_sample_delete_restores_file(tmp_path: Path) -> None:
         database.execute("""CREATE TRIGGER block_sample_delete BEFORE DELETE ON samples
                BEGIN SELECT RAISE(ABORT, 'sample delete blocked'); END""")
 
+    tracked_connections.clear()
+
     with pytest.raises(sqlite3.IntegrityError, match="sample delete blocked"):
         store.remove_sample(voice.slug, sample_id)
 
+    assert_connections_closed(tracked_connections)
     assert sample_path.is_file()
     assert sample_path.read_bytes() == b"one"
     assert len(store.list_samples(voice.slug)) == 2
