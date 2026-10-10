@@ -1,7 +1,7 @@
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
 
 import pytest
 
@@ -30,6 +30,92 @@ def test_voice_lifecycle_erases_all_files(tmp_path: Path) -> None:
     assert deleted.slug == "nick-calm"
     assert not (store.voices_dir / "nick-calm").exists()
     assert store.list_voices() == []
+
+
+def test_startup_restores_tombstone_when_voice_row_remains(tmp_path: Path) -> None:
+    store = VoiceStore(tmp_path)
+    voice = store.create_voice("recover-me", created_by=123)
+    sample = store.add_sample(voice.slug, "sample.wav", b"keep this")
+    tombstone = store.voices_dir / f".{voice.slug}.{'a' * 32}.deleting"
+    sample.parent.parent.rename(tombstone)
+
+    recovered = VoiceStore(tmp_path, cleanup=False)
+
+    assert recovered.get_voice(voice.slug).sample_count == 1
+    assert recovered.sample_paths(voice.slug)[0].read_bytes() == b"keep this"
+    assert not tombstone.exists()
+
+
+def test_startup_removes_tombstone_when_voice_row_was_deleted(tmp_path: Path) -> None:
+    store = VoiceStore(tmp_path)
+    voice = store.create_voice("already-gone", created_by=123)
+    sample = store.add_sample(voice.slug, "sample.wav", b"delete this")
+    tombstone = store.voices_dir / f".{voice.slug}.{'b' * 32}.deleting"
+    sample.parent.parent.rename(tombstone)
+    with sqlite3.connect(store.database_path) as database:
+        database.execute("PRAGMA foreign_keys = ON")
+        database.execute("DELETE FROM voices WHERE slug = ?", (voice.slug,))
+
+    VoiceStore(tmp_path, cleanup=False)
+
+    assert not tombstone.exists()
+    assert not (store.voices_dir / voice.slug).exists()
+
+
+def test_failed_voice_delete_restores_files(tmp_path: Path) -> None:
+    store = VoiceStore(tmp_path)
+    voice = store.create_voice("keep-me", created_by=123)
+    sample = store.add_sample(voice.slug, "sample.wav", b"preserve this")
+    with sqlite3.connect(store.database_path) as database:
+        database.execute("""CREATE TRIGGER block_voice_delete BEFORE DELETE ON voices
+               BEGIN SELECT RAISE(ABORT, 'voice delete blocked'); END""")
+
+    with pytest.raises(sqlite3.IntegrityError, match="voice delete blocked"):
+        store.delete_voice(voice.slug)
+
+    assert store.get_voice(voice.slug).sample_count == 1
+    assert sample.read_bytes() == b"preserve this"
+    assert not list(store.voices_dir.glob(f".{voice.slug}.*.deleting"))
+
+
+def test_startup_recovery_waits_for_active_voice_delete(tmp_path: Path, monkeypatch):
+    store = VoiceStore(tmp_path)
+    voice = store.create_voice("active-delete", created_by=123)
+    sample = store.add_sample(voice.slug, "sample.wav", b"delete this")
+    rename = Path.rename
+    tombstone_created = Event()
+    allow_delete_to_finish = Event()
+    recovery_finished = Event()
+
+    def gated_rename(path: Path, target: Path):
+        result = rename(path, target)
+        if path == sample.parent.parent:
+            tombstone_created.set()
+            assert allow_delete_to_finish.wait(timeout=5)
+        return result
+
+    monkeypatch.setattr(Path, "rename", gated_rename)
+
+    def delete_voice():
+        store.delete_voice(voice.slug)
+
+    def recover():
+        VoiceStore(tmp_path, cleanup=False)
+        recovery_finished.set()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        delete = executor.submit(delete_voice)
+        assert tombstone_created.wait(timeout=5)
+        recovery = executor.submit(recover)
+        try:
+            assert not recovery_finished.wait(timeout=0.1)
+        finally:
+            allow_delete_to_finish.set()
+        delete.result(timeout=5)
+        recovery.result(timeout=5)
+
+    assert recovery_finished.is_set()
+    assert not list(store.voices_dir.glob(f".{voice.slug}.*.deleting"))
 
 
 @pytest.fixture
