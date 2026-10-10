@@ -97,6 +97,31 @@ class AIHelper:
         except Exception as e:
             self.logger.error(f"Error saving debug information: {e}")
 
+    @staticmethod
+    def _write_image(content: bytes) -> str:
+        fd, temp_path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            Path(temp_path).write_bytes(content)
+        except BaseException:
+            Path(temp_path).unlink(missing_ok=True)
+            raise
+        return temp_path
+
+    async def _save_image(self, content: bytes) -> str:
+        task = asyncio.create_task(asyncio.to_thread(self._write_image, content))
+        cancelled = False
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                cancelled = True
+        path = task.result()
+        if cancelled:
+            Path(path).unlink(missing_ok=True)
+            raise asyncio.CancelledError
+        return path
+
     async def download_image(self, url: str) -> Optional[str]:
         """Download an image from a URL and save it to a temporary file"""
         try:
@@ -125,9 +150,7 @@ class AIHelper:
 
                 # Create a temporary file
                 content = await response.read()
-                fd, temp_path = await asyncio.to_thread(tempfile.mkstemp, suffix=".png")
-                os.close(fd)
-                await asyncio.to_thread(Path(temp_path).write_bytes, content)
+                temp_path = await self._save_image(content)
 
                 self.logger.info(f"Image downloaded and saved to: {temp_path}")
                 return temp_path
