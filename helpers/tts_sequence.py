@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 
@@ -49,7 +50,7 @@ def parse_tts_sequence(
                 duration = float(value)
             except ValueError as exc:
                 raise ValueError("Pause must be a number of seconds") from exc
-            if duration <= 0 or duration > max_silence:
+            if not math.isfinite(duration) or duration <= 0 or duration > max_silence:
                 raise ValueError(
                     f"Each pause must be more than 0 and at most {max_silence} seconds"
                 )

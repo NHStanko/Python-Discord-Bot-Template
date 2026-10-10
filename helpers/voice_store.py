@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 import shutil
 import sqlite3
@@ -278,7 +279,7 @@ class VoiceStore:
 
     def set_volume(self, name: str, volume: float) -> VoiceProfile:
         voice = self.get_voice(name)
-        if volume < 0 or volume > 4:
+        if not math.isfinite(volume) or volume < 0 or volume > 4:
             raise ValueError("Voice volume must be between 0% and 400%")
         with self._connect() as db:
             db.execute(
