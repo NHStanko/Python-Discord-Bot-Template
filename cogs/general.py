@@ -34,7 +34,9 @@ class General(commands.Cog, name="general"):
         )
         for cog_name, cog in self.bot.cogs.items():
             # if cog is owner only and the user is not the owner, skip it
-            if cog_name.lower() == "owner" and not await self.bot.is_owner(context.author):
+            if cog_name.lower() == "owner" and not await self.bot.is_owner(
+                context.author
+            ):
                 continue
 
             if cog is None:
@@ -43,7 +45,9 @@ class General(commands.Cog, name="general"):
             visible_commands = cog.get_commands()
             data = []
             for command in visible_commands:
-                description = command.description.partition("\n")[0] or "No description provided."
+                description = (
+                    command.description.partition("\n")[0] or "No description provided."
+                )
                 data.append(f"{prefix}{command.name} - {description}")
 
             if not data:
@@ -97,11 +101,15 @@ class General(commands.Cog, name="general"):
 
         :param context: The hybrid command context.
         """
-        roles = [role.name for role in context.guild.roles]
-        if len(roles) > 50:
-            roles = roles[:50]
-            roles.append(f">>>> Displaying[50/{len(roles)}] Roles")
-        roles = ", ".join(roles)
+        total_roles = len(context.guild.roles)
+        displayed_roles = [role.name for role in context.guild.roles[:50]]
+        while True:
+            roles = ", ".join(displayed_roles)
+            if len(displayed_roles) < total_roles:
+                roles += f"\n… Showing {len(displayed_roles)}/{total_roles} roles"
+            if len(roles) <= 1024:
+                break
+            displayed_roles.pop()
 
         embed = discord.Embed(
             title="**Server Name:**", description=f"{context.guild}", color=0x9C84EF
