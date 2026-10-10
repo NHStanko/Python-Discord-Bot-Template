@@ -11,6 +11,11 @@
   "gemini_api_key": "",
   "gemini_model": "gemini-2.5-pro",
   "gemini_debug": false,
+  "ai": {
+    "max_concurrent_requests": 32,
+    "max_image_bytes": 20971520,
+    "max_image_pixels": 40000000
+  },
   "reddit_api_enabled": false,
   "reddit_client_id": "",
   "reddit_client_secret": "",

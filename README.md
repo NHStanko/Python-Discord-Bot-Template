@@ -90,9 +90,24 @@ restart the bot:
 {
   "gemini_api_key": "YOUR_GOOGLE_AI_STUDIO_API_KEY",
   "gemini_model": "gemini-2.5-pro",
-  "gemini_debug": false
+  "gemini_debug": false,
+  "ai": {
+    "max_concurrent_requests": 32,
+    "max_image_bytes": 20971520,
+    "max_image_pixels": 40000000
+  }
 }
 ```
+
+The optional `ai` settings above are the defaults. The concurrency limit is shared
+by Gemini generation and image downloads across the bot; raise it to match your
+available capacity. There is no per-user cooldown. At capacity, new AI generation
+requests receive a busy response rather than joining an unbounded queue. These
+settings do not change the TTS worker's existing serialization.
+
+Image downloads are limited to 20 MiB even when a server omits its content length.
+The bot verifies the image format and rejects images above 40 million pixels
+before uploading them to Gemini.
 
 Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
 The same model handles image input, structured Bajs replies, and Google Search
@@ -189,3 +204,23 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE.md](LIC
 ## Attribution
 
 The original template was created by [kkrypt0nn](https://github.com/kkrypt0nn) and is available at [kkrypt0nn/Python-Discord-Bot-Template](https://github.com/kkrypt0nn/Python-Discord-Bot-Template).
+
+## Database integrity and startup
+
+Configuration is validated before connecting to Discord. The database and cogs
+initialize through `setup_hook` on the same event loop that runs the bot.
+Importing `bot` does not load configuration, open log files, or create a bot;
+`create_bot()` provides an explicit entrypoint for tests and integrations.
+
+On startup, the database migration adds unique indexes for user balances,
+blacklists, user/song play counts, and warning IDs within each user/server pair.
+Legacy duplicate play counts are summed, identical balance records are collapsed,
+and duplicate warning IDs are reassigned without deleting warning contents.
+If duplicate balance records disagree, migration stops and rolls back; reconcile
+those records before restarting. Historical lost updates and incorrect bankruptcy
+counts cannot be reconstructed automatically.
+
+Wagers now validate available funds and update balances and statistics in one
+transaction. All-in wagers use the balance inside that transaction. A bankruptcy
+is counted only when a positive balance reaches zero, and the bot announces a
+result only after the transaction commits.

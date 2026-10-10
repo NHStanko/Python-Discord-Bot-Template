@@ -1,17 +1,75 @@
 import asyncio
 import inspect
+import io
 import json
 import logging
 import os
 import shutil
 import tempfile
+import warnings
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
 from google import genai
 from google.genai import types
+from PIL import Image
+
+from helpers.config import AI_DEFAULTS
+
+
+class AIRequestLimiter:
+    """Fail fast when full, without accumulating waiting tasks or cooldowns."""
+
+    def __init__(self, limit):
+        self.limit = limit
+        self.active = 0
+
+
+def bounded_ai_request(*, busy_result):
+    def decorate(func):
+        @wraps(func)
+        async def wrapped(self, *args, **kwargs):
+            limiter = self._request_limiter
+            # No suspension between checking and reserving a slot.
+            if limiter.active >= limiter.limit:
+                return busy_result
+            limiter.active += 1
+            try:
+                return await func(self, *args, **kwargs)
+            finally:
+                limiter.active -= 1
+
+        return wrapped
+
+    return decorate
+
+
+def validate_image(content: bytes, max_pixels: int) -> str:
+    """Verify actual image bytes, including pixel bounds, before SDK upload."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", Image.DecompressionBombWarning)
+        with Image.open(io.BytesIO(content)) as image:
+            if image.width * image.height > max_pixels:
+                raise ValueError("Image exceeds configured pixel limit")
+            suffixes = {"PNG": ".png", "JPEG": ".jpg", "GIF": ".gif", "WEBP": ".webp"}
+            if image.format not in suffixes:
+                raise ValueError("Unsupported image format")
+            suffix = suffixes[image.format]
+            image.verify()
+            return suffix
+
+
+def save_image(content: bytes, suffix: str) -> str:
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as file:
+        try:
+            file.write(content)
+            return file.name
+        except BaseException:
+            os.unlink(file.name)
+            raise
 
 
 class AIHelper:
@@ -30,6 +88,14 @@ class AIHelper:
         self.client = genai.Client(api_key=api_key)
         self.logger = logger or logging.getLogger("discord_bot")
         self.debug_mode = debug_mode
+        settings = {**AI_DEFAULTS, **getattr(bot, "config", {}).get("ai", {})}
+        self.max_image_bytes = settings["max_image_bytes"]
+        self.max_image_pixels = settings["max_image_pixels"]
+        limiter = getattr(bot, "_ai_request_limiter", None)
+        if limiter is None:
+            limiter = AIRequestLimiter(settings["max_concurrent_requests"])
+            bot._ai_request_limiter = limiter
+        self._request_limiter = limiter
         self._http_session: aiohttp.ClientSession | None = None
         self._http_session_lock: asyncio.Lock | None = None
         self._debug_lock = asyncio.Lock()
@@ -97,6 +163,7 @@ class AIHelper:
         except Exception as e:
             self.logger.error(f"Error saving debug information: {e}")
 
+    @bounded_ai_request(busy_result=None)
     async def download_image(self, url: str) -> Optional[str]:
         """Download an image from a URL and save it to a temporary file"""
         try:
@@ -123,11 +190,36 @@ class AIHelper:
                     )
                     return None
 
-                # Create a temporary file
-                content = await response.read()
-                fd, temp_path = await asyncio.to_thread(tempfile.mkstemp, suffix=".png")
-                os.close(fd)
-                await asyncio.to_thread(Path(temp_path).write_bytes, content)
+                if (
+                    response.content_length is not None
+                    and response.content_length > self.max_image_bytes
+                ):
+                    raise ValueError("Image exceeds configured download limit")
+                mime = response.headers.get("Content-Type", "").split(";", 1)[0].lower()
+                if (
+                    mime
+                    and not mime.startswith("image/")
+                    and mime != "application/octet-stream"
+                ):
+                    raise ValueError("Remote response is not an image")
+                content = bytearray()
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    if len(content) + len(chunk) > self.max_image_bytes:
+                        raise ValueError("Image exceeds configured download limit")
+                    content.extend(chunk)
+                suffix = await asyncio.to_thread(
+                    validate_image, bytes(content), self.max_image_pixels
+                )
+                # A cancelled write must finish so its temporary file can be removed.
+                write_task = asyncio.create_task(
+                    asyncio.to_thread(save_image, content, suffix)
+                )
+                try:
+                    temp_path = await asyncio.shield(write_task)
+                except asyncio.CancelledError:
+                    temp_path = await write_task
+                    await asyncio.to_thread(Path(temp_path).unlink, missing_ok=True)
+                    raise
 
                 self.logger.info(f"Image downloaded and saved to: {temp_path}")
                 return temp_path
@@ -135,18 +227,40 @@ class AIHelper:
             self.logger.error(f"Error downloading image: {e}")
             return None
 
+    async def _sdk_call(self, func, **kwargs):
+        task = asyncio.create_task(asyncio.to_thread(func, **kwargs))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # Threads cannot be cancelled; retain the slot until the call ends.
+            try:
+                result = await task
+                if func == self.client.files.upload and getattr(result, "name", None):
+                    await self._delete_uploaded_file(result.name)
+            except Exception:
+                self.logger.warning(
+                    "SDK call failed during cancellation", exc_info=True
+                )
+            raise
+
     async def upload_file(self, file_path: str) -> Optional[Any]:
         """Upload a file to the Gemini API asynchronously"""
         try:
             self.logger.info(f"Uploading file to Gemini API: {file_path}")
             # Run the synchronous file upload in an executor
-            file = await asyncio.to_thread(self.client.files.upload, file=file_path)
+            file = await self._sdk_call(self.client.files.upload, file=file_path)
             self.logger.info(f"File uploaded successfully. URI: {file.uri}")
             return file
         except Exception as e:
             self.logger.error(f"Error uploading file: {e}")
             return None
 
+    @bounded_ai_request(
+        busy_result=(
+            None,
+            "AI is handling the maximum simultaneous requests. Please try again shortly.",
+        )
+    )
     async def generate_content(
         self,
         prompt: str,
@@ -325,7 +439,7 @@ class AIHelper:
 
             # Generate content asynchronously using run_in_executor
             self.logger.info(f"Sending request to Gemini API using model: {self.model}")
-            response = await asyncio.to_thread(
+            response = await self._sdk_call(
                 self.client.models.generate_content,
                 model=self.model,
                 contents=contents,

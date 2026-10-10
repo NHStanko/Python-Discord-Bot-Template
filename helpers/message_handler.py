@@ -1,3 +1,4 @@
+import logging
 import re
 from typing import Any, Callable, List, Optional, Pattern
 
@@ -67,6 +68,11 @@ async def process_message(message: Message) -> None:
     """
     Iterate through registered handlers and execute those whose filters match the message.
     """
-    for handler in _registry:
-        if handler.matches(message):
-            await handler.func(message)
+    for handler in tuple(_registry):
+        try:
+            if handler.matches(message):
+                await handler.func(message)
+        except Exception:
+            logging.getLogger("discord_bot").exception(
+                "Message handler %s failed", handler.func.__qualname__
+            )
