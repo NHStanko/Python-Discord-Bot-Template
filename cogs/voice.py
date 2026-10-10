@@ -709,16 +709,33 @@ class SoundModifyView(discord.ui.View):
     # Callback for the "Vol Down" button
     @discord.ui.button(label="Vol Down", style=discord.ButtonStyle.gray)
     async def vol_down(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Modify and save to a temp file
-        await self._apply_volume(0.8)
-        await interaction.response.send_message(f"`{self.sound}` decreased 20%", ephemeral=True, delete_after=5)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            await self._apply_volume(0.8)
+        except Exception as exc:
+            await interaction.followup.send(
+                f"Could not decrease `{self.sound}`: {exc}", ephemeral=True
+            )
+            return
+        message = await interaction.followup.send(
+            f"`{self.sound}` decreased 20%", ephemeral=True, wait=True
+        )
+        await message.delete(delay=5)
 
     @discord.ui.button(label="Vol Up", style=discord.ButtonStyle.gray)
     async def vol_up(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Send a response with the button label
-        # Modify and save to a temp file
-        await self._apply_volume(1.2)
-        await interaction.response.send_message(f"`{self.sound}` increased 20%", ephemeral=True, delete_after=5)
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            await self._apply_volume(1.2)
+        except Exception as exc:
+            await interaction.followup.send(
+                f"Could not increase `{self.sound}`: {exc}", ephemeral=True
+            )
+            return
+        message = await interaction.followup.send(
+            f"`{self.sound}` increased 20%", ephemeral=True, wait=True
+        )
+        await message.delete(delay=5)
         
     # @discord.ui.button(label="Play", style=discord.ButtonStyle.blurple)
     # async def play(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -750,19 +767,28 @@ class SoundModifyView(discord.ui.View):
         
     @discord.ui.button(label="Reset", style=discord.ButtonStyle.red)
     async def reset(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Send a response with the button label
-        # copy from sounds/original to sounds
-        sounds = get_sound_with_extension(dir="./sounds")
-        await asyncio.to_thread(
-            shutil.copyfile,
-            SOUNDS_ORIGINAL_DIR / sounds[self.sound],
-            SOUNDS_DIR / sounds[self.sound],
+        await interaction.response.defer(ephemeral=True)
+        try:
+            sounds = get_sound_with_extension(dir="./sounds")
+            await asyncio.to_thread(
+                shutil.copyfile,
+                SOUNDS_ORIGINAL_DIR / sounds[self.sound],
+                SOUNDS_DIR / sounds[self.sound],
+            )
+        except Exception as exc:
+            await interaction.followup.send(
+                f"Could not reset `{self.sound}`: {exc}", ephemeral=True
+            )
+            return
+        await interaction.edit_original_response(
+            view=None, content=f"`{self.sound}` has been reset."
         )
-        await interaction.message.edit(view=None, content=f'`{self.sound}` has been reset.')
         
     @discord.ui.button(label="Confirm", style=discord.ButtonStyle.green)
     async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.message.edit(view=None, content=f'`{self.sound}` has been modified.')
+        await interaction.response.edit_message(
+            view=None, content=f"`{self.sound}` has been modified."
+        )
 
 # And then we finally add the cog to the bot so that it can load, unload,
 # reload and use it's content.
