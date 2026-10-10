@@ -88,6 +88,14 @@ async def run_ffmpeg(arguments: list[str], timeout: float = 120) -> None:
         process.kill()
         await process.communicate()
         raise RuntimeError("FFmpeg timed out") from exc
+    except asyncio.CancelledError:
+        if process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+        await process.communicate()
+        raise
     if process.returncode:
         detail = stderr.decode(errors="replace").strip().splitlines()
         raise RuntimeError(
