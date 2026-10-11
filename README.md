@@ -168,13 +168,17 @@ Available slash commands:
   clip. Management commands are restricted to IDs in the `owners` config setting.
 
 Reference recordings are retained under `tts.data_dir` and should be treated as
-sensitive biometric-like data. The directory is ignored by Git; mount `/data`
-as a persistent volume when using Docker.
+sensitive biometric-like data. The directory is ignored by Git; mount `/data/tts` (or its parent `/data`)
+as a persistent volume when using Docker. This includes voice profiles and the
+Hugging Face model cache.
 
 Chatterbox Nano runs entirely on CPU and generates English speech. Use Python
 3.12, FFmpeg, and the pinned dependencies in `requirements.txt`. Docker installs
 matching CPU-only PyTorch and torchaudio builds. The first training or synthesis
-request downloads the model weights; retain `/data/huggingface` between restarts.
+request downloads the model weights; retain `/data/tts/huggingface` between restarts.
+For existing containers, copy the contents of `/data/huggingface` into
+`/data/tts/huggingface` before replacing the container to reuse downloaded models.
+Remove or update any explicit `HF_HOME` override to use the new cache location.
 If Hugging Face requests authentication, provide `HF_TOKEN` with model access.
 The old `tts.language` / `POCKET_TTS_LANGUAGE` setting no longer applies.
 CPU inference uses eight threads by default; adjust `tts.cpu_threads` or

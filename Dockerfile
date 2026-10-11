@@ -30,7 +30,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     TTS_DATA_DIR=/data/tts \
-    HF_HOME=/data/huggingface
+    HF_HOME=/data/tts/huggingface
 
 WORKDIR /app
 
@@ -44,7 +44,7 @@ RUN apt-get update \
 COPY --from=builder /opt/venv /opt/venv
 COPY . /app
 
-RUN mkdir -p /data/tts /data/huggingface
+RUN mkdir -p /data/tts/huggingface
 VOLUME ["/data"]
 
 CMD ["python", "bot.py", "--voice"]
